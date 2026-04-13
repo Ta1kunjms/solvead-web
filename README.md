@@ -1,36 +1,69 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SolveAd Web
 
-## Getting Started
+SolveAd is a game-inspired thesis web application built with Next.js, Tailwind CSS, and Supabase.
 
-First, run the development server:
+## Features Implemented
+
+- Gmail login (Google OAuth) and manual registration/login (LRN + password)
+- Registration fields: first name, last name, LRN, password
+- First-time onboarding flow:
+	- Profile icon selection
+	- Confirmation prompt
+	- Redirect to homepage after confirmation
+- Homepage with map-style level selection using image-based level buttons
+- Hover/click interaction effect for level buttons
+- Top-right controls:
+	- Sound toggle
+	- Settings panel (language, accessibility, about)
+	- Help/Info panel (how to use, game mechanics, login guide)
+
+## Tech Stack
+
+- Next.js (App Router, TypeScript)
+- Tailwind CSS
+- Supabase Auth + Postgres
+
+## Setup
+
+1. Install dependencies:
+
+```bash
+npm install
+```
+
+2. Create environment file:
+
+```bash
+cp .env.example .env.local
+```
+
+3. Fill `.env.local`:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+```
+
+4. In Supabase SQL editor, run schema:
+
+- `supabase/schema.sql`
+
+5. Enable Google provider in Supabase:
+
+- Authentication -> Providers -> Google
+- Add your OAuth Client ID and Secret
+- Add redirect URL (for local): `http://localhost:3000`
+
+6. Start development server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://localhost:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Notes
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Manual login uses an internal synthetic email format: `LRN@solvead.local`.
+- Passwords are handled by Supabase Auth and are not stored directly in custom tables.
+- Optional background music file can be added at: `public/assets/audio/bg-music.mp3`.

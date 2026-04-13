@@ -1,0 +1,135 @@
+"use client";
+
+import { FormEvent, useCallback, useState } from "react";
+
+type Props = {
+  levelId: string;
+  levelNumber: number;
+  onClose: () => void;
+  onSaved?: () => void;
+};
+
+export function CreateLessonForm({ levelId, levelNumber, onClose, onSaved }: Props) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    title: "",
+    summary: "",
+    content_markdown: "",
+    ppt_url: "",
+  });
+
+  const handleSubmit = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      setIsSubmitting(true);
+      setError(null);
+
+      try {
+        const title = form.title.trim();
+        const summary = form.summary.trim();
+        const content = form.content_markdown.trim();
+        const pptUrl = form.ppt_url.trim();
+
+        if (!title) {
+          setError("Lesson title is required");
+          setIsSubmitting(false);
+          return;
+        }
+
+        const response = await fetch("/api/teacher/lessons", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            level_id: levelId,
+            title,
+            summary,
+            content_markdown: content,
+            ppt_url: pptUrl,
+            is_published: false,
+          }),
+        });
+
+        if (!response.ok) {
+          const data = await response.json();
+          setError(data.error || "Failed to create lesson");
+          setIsSubmitting(false);
+          return;
+        }
+
+        onSaved?.();
+        onClose();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unknown error");
+        setIsSubmitting(false);
+      }
+    },
+    [levelId, form, onClose, onSaved],
+  );
+
+  return (
+    <div className="teacher-modal">
+      <article className="teacher-modal-card p-6">
+        <h2 className="text-2xl font-semibold text-slate-900">Create Lesson for Level {levelNumber}</h2>
+
+        <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+          <div>
+            <label className="teacher-label">Lesson Title</label>
+            <input
+              type="text"
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+              placeholder="e.g., Understanding Angles"
+              className="teacher-input"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="teacher-label">Summary</label>
+            <textarea
+              value={form.summary}
+              onChange={(e) => setForm({ ...form, summary: e.target.value })}
+              placeholder="Brief overview of the lesson..."
+              className="teacher-textarea"
+              rows={2}
+            />
+          </div>
+
+          <div>
+            <label className="teacher-label">Content (Markdown)</label>
+            <textarea
+              value={form.content_markdown}
+              onChange={(e) => setForm({ ...form, content_markdown: e.target.value })}
+              placeholder="Lesson content in markdown format..."
+              className="teacher-textarea"
+              rows={4}
+            />
+          </div>
+
+          <div>
+            <label className="teacher-label">PPT/Resource URL</label>
+            <input
+              type="url"
+              value={form.ppt_url}
+              onChange={(e) => setForm({ ...form, ppt_url: e.target.value })}
+              placeholder="https://example.com/presentation.pptx"
+              className="teacher-input"
+            />
+          </div>
+
+          {error && <p className="teacher-alert teacher-alert--error">{error}</p>}
+
+          <div className="flex gap-2 pt-4">
+            <button type="button" onClick={onClose} className="teacher-button-ghost flex-1">
+              Cancel
+            </button>
+            <button type="submit" disabled={isSubmitting} className="teacher-button flex-1 disabled:opacity-50">
+              {isSubmitting ? "Creating..." : "Create Lesson"}
+            </button>
+          </div>
+        </form>
+      </article>
+    </div>
+  );
+}
