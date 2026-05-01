@@ -190,6 +190,14 @@ function extractTeacherProfile(activeUser: User): { firstName: string; lastName:
   return { firstName: resolvedFirst, lastName: resolvedLast };
 }
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+
+  return "Network error while contacting authentication service.";
+}
+
 export default function Home() {
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const router = useRouter();
@@ -200,7 +208,7 @@ export default function Home() {
 
   const [stage, setStage] = useState<Stage>("auth");
   const [authMode, setAuthMode] = useState<AuthMode>("login");
-  const [registerRole, setRegisterRole] = useState<AccountRole>("student");
+  const [authRole, setAuthRole] = useState<AccountRole>("student");
   const [pendingRole, setPendingRole] = useState<AccountRole>("student");
   const [form, setForm] = useState({ firstName: "", lastName: "", lrn: "", password: "" });
   const [isLoading, setIsLoading] = useState(false);
@@ -215,10 +223,12 @@ export default function Home() {
   const [showSettings, setShowSettings] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [showResearchersModal, setShowResearchersModal] = useState(false);
+  const [showAboutGame, setShowAboutGame] = useState(false);
   const [leaderboardRows, setLeaderboardRows] = useState<LeaderboardEntry[]>([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
   const [leaderboardFetched, setLeaderboardFetched] = useState(false);
+  const [leaderboardExpanded, setLeaderboardExpanded] = useState(false);
 
   const filteredProfileIcons = useMemo(
     () => PROFILE_ICONS.filter((icon) => !selectedGender || icon.gender === selectedGender),
@@ -363,6 +373,40 @@ export default function Home() {
     }
   }, []);
 
+  const ensureAuthSession = useCallback(
+    async (activeUser: User) => {
+      if (!supabase) {
+        return null;
+      }
+
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+
+      if (sessionError) {
+        setStatus(`Session check failed: ${sessionError.message}`);
+        return null;
+      }
+
+      if (sessionData.session?.user?.id === activeUser.id) {
+        return sessionData.session;
+      }
+
+      const { data: refreshedData, error: refreshError } = await supabase.auth.refreshSession();
+
+      if (refreshError) {
+        setStatus("Session not ready. Please sign in again.");
+        return null;
+      }
+
+      if (refreshedData.session?.user?.id === activeUser.id) {
+        return refreshedData.session;
+      }
+
+      setStatus("Session mismatch. Please sign in again.");
+      return null;
+    },
+    [supabase],
+  );
+
   const ensureUserBootstrap = useCallback(
     async (
       activeUser: User,
@@ -443,14 +487,20 @@ export default function Home() {
     [supabase],
   );
 
-  const handleSignedInUser = useCallback(async (activeUser: User) => {
+  const handleSignedInUser = useCallback(async (activeUser: User, preferredRole?: AccountRole) => {
     if (!supabase) {
       setStatus("Supabase is not configured.");
       return;
     }
 
+    const session = await ensureAuthSession(activeUser);
+
+    if (!session) {
+      return;
+    }
+
     setUser(activeUser);
-    const role = await ensureUserBootstrap(activeUser);
+    const role = await ensureUserBootstrap(activeUser, preferredRole);
 
     if (!role) {
       setStatus("Choose your role to continue.");
@@ -528,7 +578,7 @@ export default function Home() {
       setStage(profileGender ? "profile" : "gender");
       setStatus(profileGender ? "Select your profile icon to continue." : "Choose male or female to continue.");
     }
-  }, [ensureUserBootstrap, fetchPreferences, supabase]);
+  }, [ensureAuthSession, ensureUserBootstrap, fetchPreferences, supabase]);
 
   useEffect(() => {
     if (!supabase) {
@@ -618,25 +668,37 @@ export default function Home() {
       return;
     }
 
-    if (registerRole === "teacher" && parsedIdentifier.lrn !== null) {
+    if (authRole === "teacher" && parsedIdentifier.lrn !== null) {
       setStatus("Registration failed: Teacher accounts must use a valid Gmail or email address.");
       return;
     }
 
     setIsLoading(true);
 
-    const { data, error } = await supabase.auth.signUp({
-      email: parsedIdentifier.email,
-      password: form.password,
-      options: {
-        data: {
-          first_name: form.firstName,
-          last_name: form.lastName,
-          lrn: parsedIdentifier.lrn,
-          role: registerRole,
+    let data: Awaited<ReturnType<typeof supabase.auth.signUp>>["data"] | null = null;
+    let error: Awaited<ReturnType<typeof supabase.auth.signUp>>["error"] | null = null;
+
+    try {
+      const response = await supabase.auth.signUp({
+        email: parsedIdentifier.email,
+        password: form.password,
+        options: {
+          data: {
+            first_name: form.firstName,
+            last_name: form.lastName,
+            lrn: parsedIdentifier.lrn,
+            role: authRole,
+          },
         },
-      },
-    });
+      });
+
+      data = response.data;
+      error = response.error;
+    } catch (caughtError) {
+      setStatus(`Registration failed: ${getErrorMessage(caughtError)}`);
+      setIsLoading(false);
+      return;
+    }
 
     if (error) {
       setStatus(`Registration failed: ${error.message}`);
@@ -645,25 +707,32 @@ export default function Home() {
     }
 
     if (data.user) {
-      const role = await ensureUserBootstrap(data.user, registerRole, {
-        firstName: form.firstName,
-        lastName: form.lastName,
-      });
+      if (data.session) {
+        await supabase.auth.setSession({
+          access_token: data.session.access_token,
+          refresh_token: data.session.refresh_token,
+        });
 
-      if (role === "teacher") {
-        setStatus("Teacher registration complete. Opening teacher dashboard...");
-        window.location.assign("/teacher");
-        setIsLoading(false);
-        return;
+        const role = await ensureUserBootstrap(data.user, authRole, {
+          firstName: form.firstName,
+          lastName: form.lastName,
+        });
+
+        if (role === "teacher") {
+          setStatus("Teacher registration complete. Opening teacher dashboard...");
+          window.location.assign("/teacher");
+          setIsLoading(false);
+          return;
+        }
+
+        await supabase.from("player_profiles").upsert({
+          user_id: data.user.id,
+          first_name: form.firstName,
+          last_name: form.lastName,
+          lrn: parsedIdentifier.lrn,
+          onboarding_complete: false,
+        });
       }
-
-      await supabase.from("player_profiles").upsert({
-        user_id: data.user.id,
-        first_name: form.firstName,
-        last_name: form.lastName,
-        lrn: parsedIdentifier.lrn,
-        onboarding_complete: false,
-      });
     }
 
     setStatus("Registration complete. You can now log in with LRN or Gmail + password.");
@@ -691,12 +760,29 @@ export default function Home() {
       return;
     }
 
+    if (authRole === "teacher" && parsedIdentifier.lrn !== null) {
+      setStatus("Login failed: Teacher accounts must use a valid Gmail or email address.");
+      return;
+    }
+
     setIsLoading(true);
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: parsedIdentifier.email,
-      password: form.password,
-    });
+    let data: Awaited<ReturnType<typeof supabase.auth.signInWithPassword>>["data"] | null = null;
+    let error: Awaited<ReturnType<typeof supabase.auth.signInWithPassword>>["error"] | null = null;
+
+    try {
+      const response = await supabase.auth.signInWithPassword({
+        email: parsedIdentifier.email,
+        password: form.password,
+      });
+
+      data = response.data;
+      error = response.error;
+    } catch (caughtError) {
+      setStatus(`Login failed: ${getErrorMessage(caughtError)}`);
+      setIsLoading(false);
+      return;
+    }
 
     if (error || !data.user) {
       setStatus(`Login failed: ${error?.message ?? "No user returned"}`);
@@ -704,7 +790,14 @@ export default function Home() {
       return;
     }
 
-    await handleSignedInUser(data.user);
+    if (data.session) {
+      await supabase.auth.setSession({
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+      });
+    }
+
+    await handleSignedInUser(data.user, authRole);
     setIsLoading(false);
   };
 
@@ -716,12 +809,22 @@ export default function Home() {
 
     setIsLoading(true);
 
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
-      },
-    });
+    let error: Awaited<ReturnType<typeof supabase.auth.signInWithOAuth>>["error"] | null = null;
+
+    try {
+      const response = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
+        },
+      });
+
+      error = response.error;
+    } catch (caughtError) {
+      setStatus(`Google sign in failed: ${getErrorMessage(caughtError)}`);
+      setIsLoading(false);
+      return;
+    }
 
     if (error) {
       setStatus(`Google sign in failed: ${error.message}`);
@@ -866,7 +969,7 @@ export default function Home() {
 
   const homeBackgroundStyle = {
     backgroundImage: preferences.dark_mode
-      ? "url('/assets/backgrounds/homepage-darkmode.png')"
+      ? "url('/assets/backgrounds/background-5.png')"
       : "url('/assets/backgrounds/home-map.jpeg')",
   };
 
@@ -883,7 +986,31 @@ export default function Home() {
       <div className="relative mx-auto flex min-h-screen w-full max-w-5xl flex-col items-center justify-center gap-6">
         <div className="panel-card w-full max-w-md p-6 sm:p-7">
           <h2 className="ribbon-title text-center text-2xl text-[#553819]">{authMode === "register" ? "Create Account" : "Login"}</h2>
-          <p className="mt-2 text-center text-sm font-semibold text-[#5f4324]">Use LRN or Gmail with password, or continue with Gmail OAuth.</p>
+          <div className="mt-3 grid grid-cols-2 gap-2 rounded-full bg-[#f3e2b9]/70 p-1">
+            <button
+              type="button"
+              onClick={() => setAuthRole("student")}
+              className={`rounded-full px-3 py-2 text-xs font-black uppercase ${
+                authRole === "student" ? "bg-[#d68c25] text-white" : "bg-[#fff5dd] text-[#5f4220]"
+              }`}
+            >
+              Student
+            </button>
+            <button
+              type="button"
+              onClick={() => setAuthRole("teacher")}
+              className={`rounded-full px-3 py-2 text-xs font-black uppercase ${
+                authRole === "teacher" ? "bg-[#d68c25] text-white" : "bg-[#fff5dd] text-[#5f4220]"
+              }`}
+            >
+              Teacher
+            </button>
+          </div>
+          <p className="mt-2 text-center text-sm font-semibold text-[#5f4324]">
+            {authRole === "teacher"
+              ? "Use Gmail with password, or continue with Gmail OAuth."
+              : "Use LRN or Gmail with password, or continue with Gmail OAuth."}
+          </p>
 
           <form className="mt-5 space-y-3" onSubmit={authMode === "register" ? handleRegister : handleLogin}>
             {authMode === "register" && (
@@ -902,28 +1029,12 @@ export default function Home() {
                   onChange={(event) => setForm((previous) => ({ ...previous, lastName: event.target.value }))}
                   className="w-full rounded-xl border border-[#9a6f38]/45 bg-[#fff8e7] px-3 py-2 text-sm font-semibold text-[#5f4220] outline-none"
                 />
-                <div className="grid grid-cols-2 gap-2 rounded-xl bg-[#f3e2b9]/70 p-2">
-                  <button
-                    type="button"
-                    onClick={() => setRegisterRole("student")}
-                    className={`rounded-lg px-3 py-2 text-xs font-black uppercase ${registerRole === "student" ? "bg-[#d68c25] text-white" : "bg-[#fff5dd] text-[#5f4220]"}`}
-                  >
-                    Student
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRegisterRole("teacher")}
-                    className={`rounded-lg px-3 py-2 text-xs font-black uppercase ${registerRole === "teacher" ? "bg-[#d68c25] text-white" : "bg-[#fff5dd] text-[#5f4220]"}`}
-                  >
-                    Teacher
-                  </button>
-                </div>
               </>
             )}
 
             <input
               type="text"
-              placeholder="LRN or Gmail"
+              placeholder={authRole === "teacher" ? "Gmail address" : "LRN or Gmail"}
               value={form.lrn}
               onChange={(event) => setForm((previous) => ({ ...previous, lrn: event.target.value }))}
               className="w-full rounded-xl border border-[#9a6f38]/45 bg-[#fff8e7] px-3 py-2 text-sm font-semibold text-[#5f4220] outline-none"
@@ -1199,7 +1310,7 @@ export default function Home() {
               type="button"
               style={{ left: position.left, top: position.top }}
               className={`group absolute -translate-x-1/2 -translate-y-1/2 transition-transform duration-150 ${
-                unlocked ? (activeLevel === position.level ? "scale-95" : "hover:scale-110 active:scale-95") : "cursor-not-allowed opacity-70"
+                unlocked ? (activeLevel === position.level ? "scale-95" : "hover:scale-115 active:scale-95") : "cursor-not-allowed opacity-70"
               }`}
               disabled={!unlocked}
               onClick={() => {
@@ -1216,8 +1327,8 @@ export default function Home() {
                 alt={`Level ${position.level}`}
                 width={70}
                 height={70}
-                className={`h-[clamp(80px,10.8vw,140px)] w-[clamp(80px,10.8vw,140px)] drop-shadow-[0_7px_10px_rgba(39,16,4,0.48)] transition-all duration-150 ${
-                  unlocked ? "group-hover:drop-shadow-[0_10px_16px_rgba(39,16,4,0.6)]" : "grayscale"
+                className={`h-[clamp(80px,10.8vw,140px)] w-[clamp(80px,10.8vw,140px)] drop-shadow-[0_7px_10px_rgba(39,16,4,0.48)] transition-all duration-150 group-hover:scale-105 ${
+                  unlocked ? "group-hover:drop-shadow-[0_12px_20px_rgba(255,180,50,0.5)] group-hover:brightness-110" : "grayscale"
                 }`}
               />
               <span className="pointer-events-none absolute left-1/2 top-[50%] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#3d220f]/82 px-1.5 py-0.5 text-[10px] font-extrabold text-[#fdeecf] opacity-0 transition-opacity group-hover:opacity-100">
@@ -1248,11 +1359,23 @@ export default function Home() {
           </div>
 
           <div className="panel-card w-full min-w-[220px] rounded-2xl border-[#8a6330]/45 bg-[#f4e1b6]/95 px-3 py-2.5 shadow-[0_10px_18px_rgba(53,29,7,0.3)] sm:min-w-[280px] sm:px-4 sm:py-3">
-            <div className="flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setLeaderboardExpanded((prev) => !prev);
+              }}
+              className="flex w-full items-center justify-between gap-2"
+            >
               <h3 className="ribbon-title text-base text-[#5a3818]">{copy.leaderboards}</h3>
-              <Image src="/assets/misc-buttons/Leaderboards Button.png" alt="Leaderboards" width={26} height={26} className="h-6 w-6 object-contain" />
-            </div>
-            <div className="mt-2 rounded-xl border border-[#8d6131]/40 bg-[#d9a55f] px-3 py-2">
+              <Image
+                src="/assets/misc-buttons/Leaderboards Button.png"
+                alt="Leaderboards"
+                width={26}
+                height={26}
+                className={`h-6 w-6 object-contain transition ${leaderboardExpanded ? "rotate-180" : ""}`}
+              />
+            </button>
+            <div className={`mt-2 overflow-hidden rounded-xl border border-[#8d6131]/40 bg-[#d9a55f] px-3 py-2 ${leaderboardExpanded ? "max-h-80" : "max-h-0 border-0 px-0 py-0"}`}>
               <div className="mb-2 flex items-center gap-2">
                 <Image src="/assets/misc-buttons/Trophy Button.png" alt="Top players" width={22} height={22} className="h-5 w-5 object-contain" />
                 <p className="text-sm font-black text-[#5a3818] sm:text-base">{copy.topPlayers}</p>
@@ -1264,8 +1387,8 @@ export default function Home() {
               ) : leaderboardRows.length === 0 ? (
                 <p className="text-sm font-semibold text-[#6b4827]">No players yet.</p>
               ) : (
-                <div className="max-h-24 space-y-1 overflow-y-auto pr-1">
-                  {leaderboardRows.map((row) => {
+                <div className="space-y-1">
+                  {leaderboardRows.slice(0, 10).map((row) => {
                     const medalSrc = LEADERBOARD_MEDALS[row.rank];
 
                     return (
@@ -1448,7 +1571,15 @@ export default function Home() {
                 <span className="w-28 text-base font-black text-[#5a3818]">{copy.helpInfo}</span>
               </button>
 
-              <div className="flex w-full items-start gap-3 rounded-2xl border border-[#a77842]/40 bg-[#f5dbab]/65 px-3 py-3 shadow-[0_5px_12px_rgba(77,44,18,0.12)]">
+              <button
+                type="button"
+                className="flex w-full items-start gap-3 rounded-2xl border border-[#a77842]/40 bg-[#f5dbab]/70 px-3 py-3 text-left shadow-[0_5px_12px_rgba(77,44,18,0.14)] transition hover:opacity-95"
+                onClick={() => {
+                  playClickSound();
+                  setShowAboutGame(true);
+                  setShowSettings(false);
+                }}
+              >
                 <Image
                   src="/assets/misc-buttons/Trophy Button.png"
                   alt="About the Game"
@@ -1460,7 +1591,7 @@ export default function Home() {
                   <p className="text-base font-black text-[#5a3818]">{copy.aboutTheGame}</p>
                   <p className="mt-1 text-sm font-semibold leading-5 text-[#6c4828]">{copy.aboutText}</p>
                 </div>
-              </div>
+              </button>
 
             </div>
 
@@ -1526,12 +1657,12 @@ export default function Home() {
 
       {showResearchersModal && (
         <div
-          className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-3 sm:p-6"
+          className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4"
           onClick={() => setShowResearchersModal(false)}
           role="presentation"
         >
           <div
-            className="relative w-full max-w-5xl rounded-[26px] border-2 border-[#9a6f38]/55 bg-gradient-to-b from-[#f6e8c9] via-[#e8cb96] to-[#dcae66] p-4 shadow-[0_20px_40px_rgba(24,11,4,0.45)] sm:p-6"
+            className="relative w-full max-w-5xl rounded-2xl border-4 border-[#c9a670] bg-gradient-to-b from-[#f7e9c8] via-[#e7c98e] to-[#d7a95f] p-6 shadow-2xl"
             onClick={(event) => event.stopPropagation()}
             role="dialog"
             aria-modal="true"
@@ -1540,35 +1671,111 @@ export default function Home() {
             <button
               type="button"
               onClick={() => setShowResearchersModal(false)}
-              className="absolute right-3 top-3 rounded-full bg-[#f8e6c2] px-2.5 py-1 text-sm font-black text-[#5a3818] shadow transition hover:bg-[#f5dab0] sm:right-4 sm:top-4"
+              className="absolute right-4 top-4 rounded-full bg-[#f7e2b7] w-10 h-10 flex items-center justify-center text-[#5a3818] font-bold text-lg shadow hover:bg-[#f1d5a0] transition"
               aria-label="Close profile modal"
             >
-              X
+              ✕
             </button>
 
-            <div className="rounded-[18px] border border-[#9f733f]/45 bg-[#f7edda]/85 p-3 sm:p-4">
-              <h4 className="mb-3 text-center text-base font-black uppercase tracking-[0.04em] text-[#3d260f] sm:text-lg">Research Team</h4>
-              <div className="grid max-h-[62vh] grid-cols-1 gap-3 overflow-y-auto pr-1 sm:grid-cols-3 sm:gap-4">
-                {RESEARCHER_PROFILES.map((researcher) => (
-                  <article
-                    key={researcher.id}
-                    className="mx-auto w-full max-w-[280px] rounded-[20px] border border-[#f2ddb0]/65 bg-gradient-to-b from-[#f9efd5] via-[#f2d8a8] to-[#e6ba78] px-3 py-4 text-center shadow-[0_10px_18px_rgba(53,29,7,0.3)]"
-                  >
-                    <Image
-                      src={researcher.image}
-                      alt={researcher.name}
-                      width={96}
-                      height={96}
-                      className="mx-auto h-20 w-20 rounded-full border-2 border-[#fff5de] object-cover"
-                    />
-                    <p className="mt-3 text-[10px] font-black uppercase leading-4 text-[#5b3717]">{researcher.name}</p>
-                    <p className="text-[10px] font-semibold text-[#6c4827]">{researcher.role}</p>
-                    <p className="mt-1 text-[10px] font-semibold leading-4 text-[#6c4827]">{researcher.school}</p>
-                    <p className="mt-2 break-all text-[9px] font-medium text-[#76522e]">{researcher.email}</p>
-                    <p className="mt-2 min-h-[2.75rem] text-[9px] font-semibold leading-4 text-[#5f4122]">{researcher.description}</p>
-                  </article>
-                ))}
+            <div className="text-center mb-6">
+              <h2 className="ribbon-title text-2xl text-[#533414]">RESEARCH TEAM</h2>
+              <p className="mt-1 text-sm font-semibold text-[#6b4827]">Meet the minds behind SOLVEAD</p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {RESEARCHER_PROFILES.map((researcher) => (
+                <article
+                  key={researcher.id}
+                  className="bg-white/70 rounded-xl border-2 border-[#b3894d] p-4 text-center hover:scale-105 transition-transform"
+                >
+                  <Image
+                    src={researcher.image}
+                    alt={researcher.name}
+                    width={120}
+                    height={120}
+                    className="mx-auto h-24 w-24 rounded-full border-4 border-[#e6c78a] object-cover shadow-lg"
+                  />
+                  <p className="mt-3 text-base font-black text-[#5b3717]">{researcher.name}</p>
+                  <p className="text-sm font-semibold text-[#6c4827]">{researcher.role}</p>
+                  <p className="mt-1 text-xs font-medium text-[#8a6a3d]">{researcher.school}</p>
+                  <p className="mt-3 text-xs font-semibold text-[#5a3d16] leading-relaxed">{researcher.description}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAboutGame && (
+        <div
+          className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-3 sm:p-6"
+          onClick={() => setShowAboutGame(false)}
+          role="presentation"
+        >
+          <div
+            className="relative w-[90vw] max-w-4xl rounded-2xl border-4 border-[#c9a670] bg-gradient-to-b from-[#f7e9c8] via-[#e7c98e] to-[#d7a95f] p-6 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="About the Game"
+          >
+            <button
+              type="button"
+              onClick={() => setShowAboutGame(false)}
+              className="absolute right-3 top-3 rounded-full bg-[#f7e2b7] w-8 h-8 flex items-center justify-center text-[#5a3818] font-bold shadow hover:bg-[#f1d5a0] transition"
+              aria-label="Close about modal"
+            >
+              ✕
+            </button>
+
+            <div className="text-center mb-6">
+              <h2 className="ribbon-title text-2xl text-[#533414]">ABOUT THE GAME</h2>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-white/60 rounded-xl border-2 border-[#b3894d] p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-2xl">📐</span>
+                  <h3 className="ribbon-title text-lg text-[#4f3313]">Game Overview</h3>
+                </div>
+                <p className="text-sm font-semibold text-[#5a3d16] leading-relaxed">
+                  SOLVEAD is a Peace-Embedded Gamified Learning Tool (PEGLT) developed to facilitate the acquisition of Grade 9 first-quarter Geometry competencies through a structured, interactive, and mastery-driven digital environment. The game comprises fifteen progressively sequenced levels, each integrating discussion, guided activities, and assessment components to ensure coherent knowledge construction and skill reinforcement. Advancement is contingent upon demonstrated mastery.
+                </p>
               </div>
+
+              <div className="bg-white/60 rounded-xl border-2 border-[#b3894d] p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-2xl">💡</span>
+                  <h3 className="ribbon-title text-lg text-[#4f3313]">Objectives</h3>
+                </div>
+                <p className="text-sm font-semibold text-[#5a3d16] leading-relaxed">
+                  The primary objective of SOLVEAD is to holistically develop learners by integrating cognitive and socio-emotional dimensions of learning. It aims to deepen students' conceptual understanding of Geometry while cultivating peace awareness, including conflict prevention, resolution, and mediation skills.
+                </p>
+              </div>
+
+              <div className="bg-white/60 rounded-xl border-2 border-[#b3894d] p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-2xl">📊</span>
+                  <h3 className="ribbon-title text-lg text-[#4f3313]">Game Structure</h3>
+                </div>
+                <p className="text-sm font-semibold text-[#5a3d16] leading-relaxed">
+                  SOLVEAD uses a level-based progression system with fifteen stages, each with conceptual discussion, interactive application, and formative assessment. Gamification elements, rewards, point systems, and immediate feedback enhance motivation and support learner autonomy.
+                </p>
+              </div>
+
+              <div className="bg-white/60 rounded-xl border-2 border-[#b3894d] p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-2xl">🕊️</span>
+                  <h3 className="ribbon-title text-lg text-[#4f3313]">Peace Education</h3>
+                </div>
+                <p className="text-sm font-semibold text-[#5a3d16] leading-relaxed">
+                  Aligned with UNESCO IBE framework, SOLVEAD integrates peace education principles through scenario-based narratives that emphasize conflict prevention, resolution, and mediation skills, fostering a respectful and collaborative learning environment.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 text-center text-xs font-semibold text-[#6b4a22]">
+              Version {new Date().getFullYear()} Taikun. All rights reserved.
             </div>
           </div>
         </div>

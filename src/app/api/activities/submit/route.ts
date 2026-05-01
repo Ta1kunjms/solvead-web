@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { applyPassedActivityOutcome } from "@/lib/activity-outcomes";
+import {
+  buildScreenshotStoragePath,
+  SCREENSHOT_BUCKET,
+  validateScreenshotFile,
+} from "@/lib/screenshot";
 
 type AttemptResponse = {
   item_id: string;
@@ -14,6 +19,53 @@ type SubmitActivityRequest = {
 };
 
 const normalizeText = (value: string) => value.trim().toLowerCase().replace(/\s+/g, " ");
+
+const asSafeText = (value: FormDataEntryValue | null) => {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const parsePayload = async (request: NextRequest) => {
+  const contentType = request.headers.get("content-type") ?? "";
+
+  if (contentType.includes("multipart/form-data")) {
+    const formData = await request.formData();
+    const payloadRaw = asSafeText(formData.get("payload"));
+    const screenshotEntry = formData.get("screenshot");
+    const screenshot = screenshotEntry instanceof File ? screenshotEntry : null;
+
+    if (!payloadRaw) {
+      return { error: "Invalid request payload" };
+    }
+
+    try {
+      const parsed = JSON.parse(payloadRaw) as SubmitActivityRequest;
+
+      return {
+        activityId: typeof parsed.activity_id === "string" ? parsed.activity_id.trim() : null,
+        responses: Array.isArray(parsed.responses) ? parsed.responses : null,
+        screenshot,
+      };
+    } catch {
+      return { error: "Invalid request payload" };
+    }
+  }
+
+  try {
+    const body = (await request.json()) as SubmitActivityRequest;
+    return {
+      activityId: typeof body.activity_id === "string" ? body.activity_id.trim() : null,
+      responses: Array.isArray(body.responses) ? body.responses : null,
+      screenshot: null,
+    };
+  } catch {
+    return { error: "Invalid request payload" };
+  }
+};
 
 export async function POST(request: NextRequest) {
   const supabase = await getSupabaseServerClient();
@@ -30,11 +82,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body: SubmitActivityRequest = await request.json();
-  const { activity_id, responses } = body;
+  const parsedPayload = await parsePayload(request);
+
+  if ("error" in parsedPayload) {
+    return NextResponse.json({ error: parsedPayload.error }, { status: 400 });
+  }
+
+  const { activityId: activity_id, responses, screenshot } = parsedPayload;
 
   if (!activity_id || !Array.isArray(responses) || responses.length === 0) {
     return NextResponse.json({ error: "Invalid request payload" }, { status: 400 });
+  }
+
+  const screenshotValidation = await validateScreenshotFile(screenshot);
+  if ("error" in screenshotValidation) {
+    return NextResponse.json({ error: screenshotValidation.error }, { status: 400 });
   }
 
   const { data: activity, error: activityError } = await supabase
@@ -100,23 +162,42 @@ export async function POST(request: NextRequest) {
 
   const scorePct = maxScore > 0 ? Math.round((totalPoints / maxScore) * 100) : 0;
   const passed = scorePct >= (activity.passing_score || 70);
+  const attemptId = crypto.randomUUID();
+  const screenshotPath = buildScreenshotStoragePath(user.id, activity.id, attemptId, screenshotValidation.extension);
+  const now = new Date().toISOString();
+
+  const { error: uploadError } = await supabase.storage.from(SCREENSHOT_BUCKET).upload(screenshotPath, screenshotValidation.buffer, {
+    contentType: screenshotValidation.mimeType,
+    cacheControl: "60",
+    upsert: false,
+  });
+
+  if (uploadError) {
+    return NextResponse.json({ error: uploadError.message }, { status: 500 });
+  }
 
   const { data: newAttempt, error: attemptError } = await supabase
     .from("activity_attempts")
     .insert({
+      id: attemptId,
       student_id: user.id,
       activity_id: activity.id,
       score: totalPoints,
       max_score: maxScore,
       passed,
       status: "graded",
-      submitted_at: new Date().toISOString(),
+      submitted_at: now,
       feedback_summary: `Score: ${scorePct}%. ${passed ? "Level unlock eligible!" : "Try again to improve."}`,
+      screenshot_path: screenshotPath,
+      screenshot_mime_type: screenshotValidation.mimeType,
+      screenshot_size_bytes: screenshotValidation.sizeBytes,
+      screenshot_uploaded_at: now,
     })
     .select("id")
     .single();
 
   if (attemptError || !newAttempt) {
+    await supabase.storage.from(SCREENSHOT_BUCKET).remove([screenshotPath]);
     return NextResponse.json({ error: "Failed to save attempt" }, { status: 500 });
   }
 
@@ -137,6 +218,7 @@ export async function POST(request: NextRequest) {
       activityId: activity_id,
       levelId: activity.level_id,
       pointsAwarded: 10,
+      scorePercent: scorePct,
     });
   }
 

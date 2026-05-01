@@ -32,6 +32,23 @@ type LevelProgressRecord = {
   best_score: number | null
 }
 
+type AttemptRecord = {
+  id: string
+  activity_id: string
+  activity_title: string
+  submitted_at: string | null
+  score: number | null
+  max_score: number | null
+  score_percent: number | null
+  passed: boolean | null
+  screenshot: {
+    available: boolean
+    mime_type: string | null
+    size_bytes: number | null
+    uploaded_at: string | null
+  }
+}
+
 export default function StudentManagementClient() {
   const supabase = useMemo(() => getSupabaseBrowserClient(), [])
   const [classes, setClasses] = useState<TeacherClass[]>([])
@@ -40,7 +57,9 @@ export default function StudentManagementClient() {
   const [error, setError] = useState<string | null>(null)
   const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null)
   const [expandedProgress, setExpandedProgress] = useState<LevelProgressRecord[]>([])
+  const [expandedAttempts, setExpandedAttempts] = useState<AttemptRecord[]>([])
   const [expandProgressLoading, setExpandProgressLoading] = useState(false)
+  const [previewAttemptId, setPreviewAttemptId] = useState<string | null>(null)
   const refreshTimerRef = useRef<number | null>(null)
 
   const fetchOverview = useCallback(async () => {
@@ -82,6 +101,7 @@ export default function StudentManagementClient() {
     if (expandedStudentId === studentId) {
       setExpandedStudentId(null)
       setExpandedProgress([])
+      setExpandedAttempts([])
       return
     }
 
@@ -96,11 +116,33 @@ export default function StudentManagementClient() {
 
       const data = await response.json()
       setExpandedProgress(data.progress || [])
+      setExpandedAttempts(data.attempts || [])
     } catch (err) {
       console.error("Error fetching progress:", err)
       setExpandedProgress([])
+      setExpandedAttempts([])
     } finally {
       setExpandProgressLoading(false)
+    }
+  }
+
+  const openScreenshotPreview = async (studentId: string, attemptId: string) => {
+    setPreviewAttemptId(attemptId)
+    try {
+      const response = await fetch(`/api/teacher/students/${studentId}/attempts/${attemptId}/screenshot`)
+      const body = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(body.error || "Failed to load screenshot preview")
+      }
+
+      if (typeof body.preview_url === "string" && body.preview_url) {
+        window.open(body.preview_url, "_blank", "noopener,noreferrer")
+      }
+    } catch (err) {
+      console.error("Error loading screenshot preview:", err)
+    } finally {
+      setPreviewAttemptId(null)
     }
   }
 
@@ -198,30 +240,84 @@ export default function StudentManagementClient() {
                   <div className="bg-slate-50 border-l-4 border-slate-300 p-4 space-y-3">
                     {expandProgressLoading ? (
                       <p className="text-sm text-slate-500">Loading progress...</p>
-                    ) : expandedProgress.length === 0 ? (
-                      <p className="text-sm text-slate-500">No level progress yet.</p>
                     ) : (
-                      <div className="grid gap-2">
-                        <h4 className="text-sm font-semibold text-slate-900 mb-2">Level Progress</h4>
-                        <div className="grid gap-2 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-                          {expandedProgress.map((prog) => (
-                            <div
-                              key={prog.level_number}
-                              className="rounded-lg border border-slate-200 bg-white p-3 text-center"
-                            >
-                              <p className="text-xs font-semibold text-slate-600">Level {prog.level_number}</p>
-                              <p className="text-xs mt-1">
-                                {prog.completed ? (
-                                  <span className="text-green-700 font-semibold">Completed</span>
-                                ) : (
-                                  <span className="text-slate-500">Not Done</span>
-                                )}
-                              </p>
-                              {prog.best_score !== null && (
-                                <p className="text-xs text-slate-600 mt-1">Score: {prog.best_score}%</p>
-                              )}
+                      <div className="grid gap-4">
+                        {expandedProgress.length === 0 ? (
+                          <p className="text-sm text-slate-500">No level progress yet.</p>
+                        ) : (
+                          <div className="grid gap-2">
+                            <h4 className="text-sm font-semibold text-slate-900 mb-2">Level Progress</h4>
+                            <div className="grid gap-2 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+                              {expandedProgress.map((prog) => (
+                                <div
+                                  key={prog.level_number}
+                                  className="rounded-lg border border-slate-200 bg-white p-3 text-center"
+                                >
+                                  <p className="text-xs font-semibold text-slate-600">Level {prog.level_number}</p>
+                                  <p className="text-xs mt-1">
+                                    {prog.completed ? (
+                                      <span className="text-green-700 font-semibold">Completed</span>
+                                    ) : (
+                                      <span className="text-slate-500">Not Done</span>
+                                    )}
+                                  </p>
+                                  {prog.best_score !== null && (
+                                    <p className="text-xs text-slate-600 mt-1">Score: {prog.best_score}%</p>
+                                  )}
+                                </div>
+                              ))}
                             </div>
-                          ))}
+                          </div>
+                        )}
+
+                        <div className="grid gap-2">
+                          <h4 className="text-sm font-semibold text-slate-900">Recent Activity Results</h4>
+                          {expandedAttempts.length === 0 ? (
+                            <p className="text-sm text-slate-500">No graded activity results yet.</p>
+                          ) : (
+                            <div className="space-y-2">
+                              {expandedAttempts.map((attempt) => (
+                                <div key={attempt.id} className="rounded-lg border border-slate-200 bg-white p-3">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <p className="text-sm font-semibold text-slate-900">{attempt.activity_title}</p>
+                                    <span className={`text-xs font-semibold ${attempt.passed ? "text-green-700" : "text-amber-700"}`}>
+                                      {attempt.passed ? "Passed" : "Needs retry"}
+                                    </span>
+                                  </div>
+                                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                                    <span
+                                      className={`rounded-full px-2 py-1 font-semibold ${
+                                        attempt.screenshot.available ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-500"
+                                      }`}
+                                    >
+                                      {attempt.screenshot.available ? "Screenshot available" : "No screenshot"}
+                                    </span>
+                                    {attempt.screenshot.available ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          void openScreenshotPreview(student.student_id, attempt.id)
+                                        }}
+                                        disabled={previewAttemptId === attempt.id}
+                                        className="rounded-full border border-teal-300/40 bg-teal-400/10 px-2 py-1 font-semibold text-teal-700 transition hover:bg-teal-400/20 disabled:cursor-wait disabled:opacity-60"
+                                      >
+                                        {previewAttemptId === attempt.id ? "Opening..." : "View Screenshot"}
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                  <p className="text-xs text-slate-600 mt-1">
+                                    Score: {attempt.score_percent ?? "-"}%
+                                    {typeof attempt.score === "number" && typeof attempt.max_score === "number"
+                                      ? ` (${attempt.score}/${attempt.max_score})`
+                                      : ""}
+                                  </p>
+                                  <p className="text-xs text-slate-500 mt-1">
+                                    {attempt.submitted_at ? new Date(attempt.submitted_at).toLocaleString() : "Submission time unavailable"}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}
@@ -232,7 +328,6 @@ export default function StudentManagementClient() {
           </div>
         )}
       </div>
-
     </section>
   )
 }

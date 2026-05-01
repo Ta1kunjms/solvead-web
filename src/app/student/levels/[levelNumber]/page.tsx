@@ -11,6 +11,7 @@ type LevelRecord = {
   level_number: number;
   title: string;
   geometry_focus: string;
+  announcement?: string | null;
 };
 
 type ActivitySummary = {
@@ -54,7 +55,7 @@ export default async function StudentLevelEntryPage({ params }: { params: Promis
   const [{ data: level }, { data: progress }, { data: lessons }, { data: activities }] = await Promise.all([
     supabase
       .from("levels")
-      .select("id, level_number, title, geometry_focus")
+      .select("id, level_number, title, geometry_focus, announcement")
       .eq("level_number", levelNumber)
       .maybeSingle(),
     supabase
@@ -114,7 +115,6 @@ export default async function StudentLevelEntryPage({ params }: { params: Promis
           <div>
             <p className="text-xs uppercase tracking-[0.4em] text-white/80">Level {levelRow.level_number}</p>
             <h1 className="mt-2 text-3xl font-extrabold text-white drop-shadow md:text-4xl">{levelRow.title}</h1>
-            <p className="mt-2 text-sm text-white/90 md:text-base">{copy.geometryFocus}: {levelRow.geometry_focus}</p>
           </div>
           <Link
             href="/"
@@ -130,6 +130,14 @@ export default async function StudentLevelEntryPage({ params }: { params: Promis
           activityList={activityList}
           copy={copy}
         />
+        {/* Bottom-left announcement only */}
+        {levelRow.announcement ? (
+          <div className="pointer-events-none fixed left-6 bottom-6 z-30 max-w-sm">
+            <div className="bg-slate-900/80 text-white rounded-lg p-4 shadow-lg">
+              <p className="text-sm text-amber-100">{levelRow.announcement}</p>
+            </div>
+          </div>
+        ) : null}
       </div>
     </main>
   );

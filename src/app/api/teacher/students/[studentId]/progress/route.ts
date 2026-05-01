@@ -11,6 +11,24 @@ type LevelProgressRecord = {
   best_score: number | null
 }
 
+type AttemptRecord = {
+  id: string
+  activity_id: string
+  submitted_at: string | null
+  score: number | null
+  max_score: number | null
+  passed: boolean | null
+  screenshot_path: string | null
+  screenshot_mime_type: string | null
+  screenshot_size_bytes: number | null
+  screenshot_uploaded_at: string | null
+  activities: {
+    title: string | null
+  } | {
+    title: string | null
+  }[] | null
+}
+
 async function requireTeacher() {
   const supabase = await getSupabaseServerClient()
 
@@ -56,7 +74,51 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<P
 
   const progress = (progressRows ?? []) as LevelProgressRecord[]
 
+  const { data: attemptRows, error: attemptError } = await supabase
+    .from("activity_attempts")
+    .select("id, activity_id, submitted_at, score, max_score, passed, screenshot_path, screenshot_mime_type, screenshot_size_bytes, screenshot_uploaded_at, activities(title)")
+    .eq("student_id", studentId)
+    .order("submitted_at", { ascending: false })
+
+  if (attemptError) {
+    return NextResponse.json({ error: attemptError.message }, { status: 500 })
+  }
+
+  const latestByActivity = new Set<string>()
+  const attempts = ((attemptRows ?? []) as AttemptRecord[])
+    .filter((row) => {
+      if (latestByActivity.has(row.activity_id)) {
+        return false
+      }
+
+      latestByActivity.add(row.activity_id)
+      return true
+    })
+    .map((row) => {
+      const relatedActivity = Array.isArray(row.activities) ? row.activities[0] : row.activities
+      return {
+        id: row.id,
+        activity_id: row.activity_id,
+        activity_title: relatedActivity?.title ?? "Untitled Activity",
+        submitted_at: row.submitted_at,
+        score: row.score,
+        max_score: row.max_score,
+        passed: row.passed,
+        score_percent:
+          typeof row.score === "number" && typeof row.max_score === "number" && row.max_score > 0
+            ? Math.round((row.score / row.max_score) * 100)
+            : null,
+        screenshot: {
+          available: Boolean(row.screenshot_path),
+          mime_type: row.screenshot_mime_type,
+          size_bytes: row.screenshot_size_bytes,
+          uploaded_at: row.screenshot_uploaded_at,
+        },
+      }
+    })
+
   return NextResponse.json({
     progress,
+    attempts,
   })
 }

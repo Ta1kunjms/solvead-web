@@ -32,6 +32,10 @@ export function LessonEditorPanel({ lesson, levelNumber, levelTitle }: Props) {
   })
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [resourceUrl, setResourceUrl] = useState<string | null>(lesson.ppt_url ?? null)
+  const [resourceFile, setResourceFile] = useState<File | null>(null)
+  const [isUploadingResource, setIsUploadingResource] = useState(false)
+  const [resourceUploadError, setResourceUploadError] = useState<string | null>(null)
 
   const saveLesson = async () => {
     setSaving(true)
@@ -82,6 +86,75 @@ export function LessonEditorPanel({ lesson, levelNumber, levelTitle }: Props) {
       setError(err instanceof Error ? err.message : "Unknown error")
     } finally {
       setSaving(false)
+    }
+  }
+
+  const uploadResource = async () => {
+    if (!resourceFile) {
+      setResourceUploadError("Select a file to upload")
+      return
+    }
+
+    setIsUploadingResource(true)
+    setResourceUploadError(null)
+
+    try {
+      const formData = new FormData()
+      formData.append("file", resourceFile)
+
+      const response = await fetch(`/api/teacher/lessons/${lesson.id}/resource`, {
+        method: "POST",
+        body: formData,
+      })
+
+      const body = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        setResourceUploadError(body.error || "Failed to upload resource")
+        return
+      }
+
+      const url = body.ppt_url || null
+      setResourceUrl(url)
+      setResourceFile(null)
+      setForm((current) => ({ ...current, ppt_url: url || "" }))
+      router.refresh()
+    } catch (err) {
+      setResourceUploadError(err instanceof Error ? err.message : "Unknown error")
+    } finally {
+      setIsUploadingResource(false)
+    }
+  }
+
+  const removeResource = async () => {
+    if (!resourceUrl) {
+      return
+    }
+
+    if (!window.confirm("Remove the uploaded resource file for this lesson?")) {
+      return
+    }
+
+    setIsUploadingResource(true)
+    setResourceUploadError(null)
+
+    try {
+      const response = await fetch(`/api/teacher/lessons/${lesson.id}/resource`, { method: "DELETE" })
+      const body = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        setResourceUploadError(body.error || "Failed to remove resource")
+        return
+      }
+
+      setResourceUrl(null)
+      setResourceFile(null)
+      setForm((current) => ({ ...current, ppt_url: "" }))
+      router.refresh()
+    } catch (err) {
+      setResourceUploadError(err instanceof Error ? err.message : "Unknown error")
+    } finally {
+      setIsUploadingResource(false)
     }
   }
 
@@ -142,9 +215,18 @@ export function LessonEditorPanel({ lesson, levelNumber, levelTitle }: Props) {
               <input
                 type="url"
                 value={form.ppt_url}
-                onChange={(e) => setForm({ ...form, ppt_url: e.target.value })}
+                onChange={(e) => {
+                  const value = e.target.value
+                  setForm({ ...form, ppt_url: value })
+                  setResourceUrl(value.trim() ? value : null)
+                }}
                 className="teacher-input"
               />
+              {resourceUrl ? (
+                <a href={resourceUrl} target="_blank" rel="noreferrer" className="mt-1 inline-flex text-xs text-slate-600 underline">
+                  View current resource
+                </a>
+              ) : null}
             </div>
             <div>
               <label className="teacher-label">Sort Order</label>
@@ -157,6 +239,40 @@ export function LessonEditorPanel({ lesson, levelNumber, levelTitle }: Props) {
               />
             </div>
           </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="teacher-label">Upload Resource File (PPT/PDF/Lumi)</label>
+              <input
+                type="file"
+                accept=".ppt,.pptx,.pdf,.doc,.docx,.xls,.xlsx,.csv,.zip,.h5p,.lumi"
+                onChange={(e) => setResourceFile(e.target.files?.[0] ?? null)}
+                className="teacher-input"
+              />
+              {resourceFile ? (
+                <p className="mt-1 text-xs text-slate-500">Selected: {resourceFile.name}</p>
+              ) : null}
+            </div>
+            <div className="flex items-end gap-2">
+              <button
+                type="button"
+                onClick={uploadResource}
+                disabled={isUploadingResource}
+                className="teacher-button disabled:opacity-50"
+              >
+                {isUploadingResource ? "Uploading..." : "Upload File"}
+              </button>
+              <button
+                type="button"
+                onClick={removeResource}
+                disabled={isUploadingResource || !resourceUrl}
+                className="teacher-button-ghost disabled:opacity-50"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+          {resourceUploadError && <p className="teacher-alert teacher-alert--error">{resourceUploadError}</p>}
         </div>
 
         <div className="flex flex-wrap gap-2 pt-2">

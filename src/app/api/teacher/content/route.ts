@@ -28,7 +28,7 @@ export async function GET() {
 
   const { data: levels, error: levelsError } = await supabase
     .from("levels")
-    .select("id, level_number, title, geometry_focus")
+    .select("id, level_number, title, geometry_focus, announcement")
     .order("level_number", { ascending: true });
 
   if (levelsError) {

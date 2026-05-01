@@ -11,18 +11,12 @@ describe('teacher student progress api', () => {
     getSupabaseServerClientMock.mockReset()
   })
 
-  it('returns level progress for a student', async () => {
+  it('returns level progress and screenshot metadata for a student', async () => {
     getSupabaseServerClientMock.mockResolvedValue({
       auth: {
         getUser: jest.fn().mockResolvedValue({ data: { user: { id: 'teacher-1' } }, error: null }),
       },
-      from: jest.fn().mockReturnValue({
-        select: jest.fn().mockReturnValue({
-          eq: jest.fn().mockReturnValue({
-            maybeSingle: jest.fn().mockResolvedValue({ data: { role: 'teacher' }, error: null }),
-          }),
-        }),
-      }).mockImplementation((table: string) => {
+      from: jest.fn().mockImplementation((table: string) => {
         if (table === 'app_user_roles') {
           return {
             select: jest.fn().mockReturnValue({
@@ -32,6 +26,7 @@ describe('teacher student progress api', () => {
             }),
           }
         }
+
         if (table === 'level_progress') {
           return {
             select: jest.fn().mockReturnValue({
@@ -48,6 +43,34 @@ describe('teacher student progress api', () => {
             }),
           }
         }
+
+        if (table === 'activity_attempts') {
+          return {
+            select: jest.fn().mockReturnValue({
+              eq: jest.fn().mockReturnValue({
+                order: jest.fn().mockResolvedValue({
+                  data: [
+                    {
+                      id: 'attempt-1',
+                      activity_id: 'act-1',
+                      submitted_at: '2024-01-03T00:00:00Z',
+                      score: 80,
+                      max_score: 100,
+                      passed: true,
+                      screenshot_path: 'student-1/act-1/attempt-1.png',
+                      screenshot_mime_type: 'image/png',
+                      screenshot_size_bytes: 12345,
+                      screenshot_uploaded_at: '2024-01-03T00:00:01Z',
+                      activities: [{ title: 'Angles' }],
+                    },
+                  ],
+                  error: null,
+                }),
+              }),
+            }),
+          }
+        }
+
         return {
           select: jest.fn().mockReturnValue({
             eq: jest.fn().mockReturnValue({
@@ -67,5 +90,8 @@ describe('teacher student progress api', () => {
     expect(body.progress[0].level_number).toBe(1)
     expect(body.progress[0].completed).toBe(true)
     expect(body.progress[0].best_score).toBe(95)
+    expect(body.attempts).toHaveLength(1)
+    expect(body.attempts[0].screenshot.available).toBe(true)
+    expect(body.attempts[0].screenshot.mime_type).toBe('image/png')
   })
 })

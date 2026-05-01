@@ -17,6 +17,26 @@
   --font-display: var(--font-title);
 }
 
+.tuna-card-title {
+  color: #FFE135;
+  text-shadow: 
+    -2px -2px 0 #755C00,
+     2px -2px 0 #755C00,
+    -2px  2px 0 #755C00,
+     2px  2px 0 #755C00,
+    -3px 0 0 #755C00,
+     3px 0 0 #755C00,
+     0 -3px 0 #755C00,
+     0  3px 0 #755C00;
+  font-family: var(--font-title), serif;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  white-space: normal;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -254,14 +274,6 @@ body {
   border: 1px solid #e5e7eb;
   background: #ffffff;
   padding: 14px;
-}
-
-.teacher-user-avatar {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  background: #111827;
-  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.15);
 }
 
 .teacher-user-name {

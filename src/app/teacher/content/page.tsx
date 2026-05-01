@@ -10,6 +10,7 @@ type Level = {
   id: string;
   level_number: number;
   title: string;
+  announcement?: string | null;
   geometry_focus: string;
 };
 
@@ -73,6 +74,8 @@ export default function TeacherContentPage() {
   }, [fetchContent]);
 
   const selectedLevelData = content.find((c) => c.level.id === selectedLevel);
+  const [editingAnnouncement, setEditingAnnouncement] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState<string | null>(null);
   const levelCount = content.length;
   const levelItems = [...content].sort((a, b) => a.level.level_number - b.level.level_number);
   const levelCountLabel = isLoading
@@ -122,14 +125,60 @@ export default function TeacherContentPage() {
             <>
               <article className="teacher-panel p-4">
                 <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-xl font-semibold text-slate-900">{selectedLevelData.level.title}</h2>
-                    <p className="teacher-helper mt-1">{selectedLevelData.level.geometry_focus}</p>
+                  <div className="flex-1">
+                    <h2 className="text-xl font-semibold text-slate-900">
+                      Level {selectedLevelData.level.level_number}
+                    </h2>
+                    <div className="mt-2">
+                      <input
+                        type="text"
+                        className="w-full rounded border px-3 py-2 text-sm mt-1"
+                        value={editingTitle ?? selectedLevelData.level.title}
+                        onChange={(e) => setEditingTitle(e.target.value)}
+                        placeholder="Level title"
+                      />
+                    </div>
+                    <div className="mt-3">
+                      <textarea
+                        className="w-full rounded border px-3 py-2 text-sm"
+                        value={editingAnnouncement ?? (selectedLevelData.level.announcement ?? "")}
+                        onChange={(e) => setEditingAnnouncement(e.target.value)}
+                        placeholder="Announcement / note / reminder for students"
+                        rows={3}
+                      />
+                    </div>
                     <p className="teacher-helper mt-2">
                       {selectedLevelData.lessons.length} lessons, {selectedLevelData.activities.length} activities
                     </p>
                   </div>
-                  <span className="teacher-chip">Level {selectedLevelData.level.level_number}</span>
+                  <div className="flex flex-col items-end gap-2 ml-4">
+                    <button
+                      onClick={async () => {
+                        const id = selectedLevelData.level.id;
+                        const announcement = editingAnnouncement ?? selectedLevelData.level.announcement ?? "";
+                        const title = editingTitle ?? selectedLevelData.level.title;
+                        try {
+                          const res = await fetch(`/api/teacher/levels/${id}`, {
+                            method: "PATCH",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ announcement, title }),
+                          });
+                          if (!res.ok) {
+                            const errorText = await res.text();
+                            throw new Error(errorText);
+                          }
+                          setEditingAnnouncement(null);
+                          setEditingTitle(null);
+                          await fetchContent();
+                        } catch (err) {
+                          setError(err instanceof Error ? err.message : String(err));
+                        }
+                      }}
+                      className="teacher-button"
+                    >
+                      Save
+                    </button>
+                  </div>
                 </div>
               </article>
 

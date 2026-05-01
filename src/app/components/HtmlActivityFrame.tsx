@@ -18,6 +18,8 @@ type Props = {
   className?: string;
   sandbox?: string;
   expectedActivityId?: string;
+  sessionId?: string;
+  resultRequestToken?: number;
   onGameResult?: (result: ActivityGameResult) => void;
 };
 
@@ -49,6 +51,196 @@ const injectBaseTag = (html: string, baseHref: string | null) => {
   }
 
   return `${baseTag}${html}`;
+};
+
+const SOLVEAD_RESULT_BRIDGE = `<script id="solvead-result-bridge">(function(){
+  if (window.__solveadBridgeInstalled) return;
+  window.__solveadBridgeInstalled = true;
+
+  var state = { activityId: null, sessionId: null };
+  var lastSent = null;
+  var timer = null;
+
+  function parseFraction(text) {
+    if (!text) return null;
+    var match = text.match(/(\\d+)\\s*\\/\\s*(\\d+)/);
+    if (!match) return null;
+    var score = Number(match[1]);
+    var maxScore = Number(match[2]);
+    if (!Number.isFinite(score) || !Number.isFinite(maxScore) || maxScore <= 0) return null;
+    return { score: score, maxScore: maxScore };
+  }
+
+  function parseCorrectCount(text) {
+    if (!text) return null;
+
+    var patterns = [
+      /(\\d+)\\s*of\\s*(\\d+)\\s*(?:answered\\s*)?correct(?:ly)?/ig,
+      /(\\d+)\\s*\\/\\s*(\\d+)\\s*(?:answered\\s*)?correct(?:ly)?/ig,
+    ];
+
+    var best = null;
+    for (var p = 0; p < patterns.length; p += 1) {
+      var regex = patterns[p];
+      regex.lastIndex = 0;
+      var match;
+      while ((match = regex.exec(text)) !== null) {
+        var score = Number(match[1]);
+        var maxScore = Number(match[2]);
+        if (!Number.isFinite(score) || !Number.isFinite(maxScore) || maxScore <= 0) {
+          continue;
+        }
+
+        best = { score: score, maxScore: maxScore, at: match.index };
+      }
+    }
+
+    if (!best) {
+      return null;
+    }
+
+    return { score: best.score, maxScore: best.maxScore };
+  }
+
+  function parseStars(text) {
+    if (!text) return 0;
+    var starsWord = text.match(/(\\d+)\\s*(?:star|stars)\\b/i);
+    if (starsWord) {
+      var parsed = Number(starsWord[1]);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+
+    var starGlyphs = (text.match(/⭐|\\u2b50/g) || []).length;
+    return starGlyphs;
+  }
+
+  function extractResult() {
+    if (!document || !document.body) return null;
+
+    var fullText = document.body.innerText || '';
+    var correctCount = parseCorrectCount(fullText);
+    if (correctCount) {
+      return {
+        score: correctCount.score,
+        maxScore: correctCount.maxScore,
+        stars: parseStars(fullText),
+      };
+    }
+
+    var candidates = [];
+    var scoreNodes = document.querySelectorAll('[id*=\\"score\\" i], [class*=\\"score\\" i], [aria-label*=\\"score\\" i], [data-score]');
+    for (var i = 0; i < scoreNodes.length; i += 1) {
+      var node = scoreNodes[i];
+      var nodeText = node.textContent || '';
+      candidates.push(nodeText);
+
+      var nodeCorrectCount = parseCorrectCount(nodeText);
+      if (nodeCorrectCount) {
+        return {
+          score: nodeCorrectCount.score,
+          maxScore: nodeCorrectCount.maxScore,
+          stars: parseStars(fullText),
+        };
+      }
+
+      var dataScore = node.getAttribute('data-score');
+      var dataMax = node.getAttribute('data-max-score');
+      if (dataScore && dataMax) {
+        var score = Number(dataScore);
+        var maxScore = Number(dataMax);
+        if (Number.isFinite(score) && Number.isFinite(maxScore) && maxScore > 0) {
+          return {
+            score: score,
+            maxScore: maxScore,
+            stars: parseStars(fullText),
+          };
+        }
+      }
+    }
+
+    candidates.push(fullText);
+
+    for (var j = 0; j < candidates.length; j += 1) {
+      var fraction = parseFraction(candidates[j]);
+      if (fraction) {
+        return {
+          score: fraction.score,
+          maxScore: fraction.maxScore,
+          stars: parseStars(candidates[j] + ' ' + (document.body.innerText || '')),
+        };
+      }
+    }
+
+    return null;
+  }
+
+  function sendResult() {
+    if (!state.activityId) return;
+    var snapshot = extractResult();
+    if (!snapshot) return;
+
+    var payload = {
+      type: 'solvead:activity-result',
+      activity_id: state.activityId,
+      session_id: state.sessionId,
+      score: Math.round(snapshot.score),
+      max_score: Math.round(snapshot.maxScore),
+      points: Math.round(snapshot.score),
+      stars: Math.max(0, Math.min(5, Math.round(snapshot.stars || 0))),
+      passed: snapshot.maxScore > 0 && snapshot.score >= snapshot.maxScore * 0.7,
+    };
+
+    var serialized = JSON.stringify(payload);
+    if (serialized === lastSent) return;
+    lastSent = serialized;
+    window.parent.postMessage(payload, '*');
+  }
+
+  function scheduleSend() {
+    if (timer) return;
+    timer = window.setTimeout(function() {
+      timer = null;
+      sendResult();
+    }, 450);
+  }
+
+  window.addEventListener('message', function(event) {
+    var data = event && event.data;
+    if (!data || typeof data !== 'object') return;
+    if (data.type === 'solvead:session') {
+      if (typeof data.activityId === 'string' && data.activityId.trim()) state.activityId = data.activityId.trim();
+      if (typeof data.sessionId === 'string' && data.sessionId.trim()) state.sessionId = data.sessionId.trim();
+      scheduleSend();
+    }
+    if (data.type === 'solvead:request-result') {
+      scheduleSend();
+    }
+  });
+
+  var observer = new MutationObserver(function() {
+    scheduleSend();
+  });
+
+  if (document.documentElement) {
+    observer.observe(document.documentElement, { subtree: true, childList: true, characterData: true });
+  }
+
+  window.addEventListener('beforeunload', sendResult);
+  document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'hidden') sendResult();
+  });
+})();</script>`;
+
+const injectSolveadBridge = (html: string) => {
+  if (html.includes("solvead-result-bridge")) {
+    return html;
+  }
+
+  if (/<head[^>]*>/i.test(html)) {
+    return html.replace(/<head[^>]*>/i, (match) => `${match}${SOLVEAD_RESULT_BRIDGE}`);
+  }
+
+  return `${SOLVEAD_RESULT_BRIDGE}${html}`;
 };
 
 const GAME_RESULT_TYPES = new Set(["solvead:activity-result", "solvead.activity.result"]);
@@ -117,6 +309,8 @@ export function HtmlActivityFrame({
   className,
   sandbox = "allow-scripts",
   expectedActivityId,
+  sessionId,
+  resultRequestToken,
   onGameResult,
 }: Props) {
   const [srcDoc, setSrcDoc] = useState<string | null>(null);
@@ -138,7 +332,7 @@ export function HtmlActivityFrame({
 
     if (looksLikeHtml(trimmed)) {
       setUseSrcDoc(true);
-      setSrcDoc(trimmed);
+      setSrcDoc(injectSolveadBridge(trimmed));
       return () => {
         cancelled = true;
       };
@@ -164,7 +358,7 @@ export function HtmlActivityFrame({
           return;
         }
 
-        setSrcDoc(injectBaseTag(text, baseHref));
+        setSrcDoc(injectSolveadBridge(injectBaseTag(text, baseHref)));
         setUseSrcDoc(true);
       } catch {
         // Fallback to iframe src if fetch fails.
@@ -194,6 +388,10 @@ export function HtmlActivityFrame({
         return;
       }
 
+      if (!parsed.activityId && expectedActivityId) {
+        parsed.activityId = expectedActivityId;
+      }
+
       if (expectedActivityId && parsed.activityId !== expectedActivityId) {
         return;
       }
@@ -207,6 +405,52 @@ export function HtmlActivityFrame({
     };
   }, [expectedActivityId, onGameResult]);
 
+  useEffect(() => {
+    const frameWindow = iframeRef.current?.contentWindow;
+    if (!frameWindow || !expectedActivityId) {
+      return;
+    }
+
+    frameWindow.postMessage(
+      {
+        type: "solvead:session",
+        activityId: expectedActivityId,
+        sessionId,
+      },
+      "*",
+    );
+  }, [expectedActivityId, sessionId, srcDoc, useSrcDoc]);
+
+  const handleFrameLoad = () => {
+    const frameWindow = iframeRef.current?.contentWindow;
+    if (!frameWindow || !expectedActivityId) {
+      return;
+    }
+
+    frameWindow.postMessage(
+      {
+        type: "solvead:session",
+        activityId: expectedActivityId,
+        sessionId,
+      },
+      "*",
+    );
+    frameWindow.postMessage({ type: "solvead:request-result" }, "*");
+  };
+
+  useEffect(() => {
+    if (!resultRequestToken) {
+      return;
+    }
+
+    const frameWindow = iframeRef.current?.contentWindow;
+    if (!frameWindow) {
+      return;
+    }
+
+    frameWindow.postMessage({ type: "solvead:request-result" }, "*");
+  }, [resultRequestToken]);
+
   return (
     <iframe
       ref={iframeRef}
@@ -215,6 +459,7 @@ export function HtmlActivityFrame({
       srcDoc={useSrcDoc ? srcDoc ?? undefined : undefined}
       className={className}
       sandbox={sandbox}
+      onLoad={handleFrameLoad}
     />
   );
 }

@@ -18,6 +18,8 @@ export function CreateLessonForm({ levelId, levelNumber, onClose, onSaved }: Pro
     content_markdown: "",
     ppt_url: "",
   });
+  const [resourceFile, setResourceFile] = useState<File | null>(null);
+  const [createdLessonId, setCreatedLessonId] = useState<string | null>(null);
 
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -37,24 +39,61 @@ export function CreateLessonForm({ levelId, levelNumber, onClose, onSaved }: Pro
           return;
         }
 
-        const response = await fetch("/api/teacher/lessons", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            level_id: levelId,
-            title,
-            summary,
-            content_markdown: content,
-            ppt_url: pptUrl,
-            is_published: false,
-          }),
-        });
+        let lessonId = createdLessonId;
 
-        if (!response.ok) {
-          const data = await response.json();
-          setError(data.error || "Failed to create lesson");
-          setIsSubmitting(false);
-          return;
+        if (!lessonId) {
+          const response = await fetch("/api/teacher/lessons", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              level_id: levelId,
+              title,
+              summary,
+              content_markdown: content,
+              ppt_url: resourceFile ? "" : pptUrl,
+              is_published: false,
+            }),
+          });
+
+          const data = await response.json().catch(() => ({}));
+
+          if (!response.ok) {
+            setError(data.error || "Failed to create lesson");
+            setIsSubmitting(false);
+            return;
+          }
+
+          lessonId = data.id;
+          if (!lessonId) {
+            setError("Lesson created but no id was returned");
+            setIsSubmitting(false);
+            return;
+          }
+
+          setCreatedLessonId(lessonId);
+
+          if (!resourceFile) {
+            onSaved?.();
+            onClose();
+            return;
+          }
+        }
+
+        if (resourceFile && lessonId) {
+          const formData = new FormData();
+          formData.append("file", resourceFile);
+
+          const uploadResponse = await fetch(`/api/teacher/lessons/${lessonId}/resource`, {
+            method: "POST",
+            body: formData,
+          });
+
+          const uploadBody = await uploadResponse.json().catch(() => ({}));
+          if (!uploadResponse.ok) {
+            setError(uploadBody.error || "Lesson created but resource upload failed");
+            setIsSubmitting(false);
+            return;
+          }
         }
 
         onSaved?.();
@@ -64,7 +103,7 @@ export function CreateLessonForm({ levelId, levelNumber, onClose, onSaved }: Pro
         setIsSubmitting(false);
       }
     },
-    [levelId, form, onClose, onSaved],
+    [levelId, form, onClose, onSaved, resourceFile, createdLessonId],
   );
 
   return (
@@ -115,7 +154,21 @@ export function CreateLessonForm({ levelId, levelNumber, onClose, onSaved }: Pro
               onChange={(e) => setForm({ ...form, ppt_url: e.target.value })}
               placeholder="https://example.com/presentation.pptx"
               className="teacher-input"
+              disabled={Boolean(resourceFile)}
             />
+          </div>
+
+          <div>
+            <label className="teacher-label">Upload Resource File (PPT/PDF/Lumi)</label>
+            <input
+              type="file"
+              accept=".ppt,.pptx,.pdf,.doc,.docx,.xls,.xlsx,.csv,.zip,.h5p,.lumi"
+              onChange={(e) => setResourceFile(e.target.files?.[0] ?? null)}
+              className="teacher-input"
+            />
+            {resourceFile && (
+              <p className="mt-1 text-xs text-slate-500">Selected: {resourceFile.name}</p>
+            )}
           </div>
 
           {error && <p className="teacher-alert teacher-alert--error">{error}</p>}

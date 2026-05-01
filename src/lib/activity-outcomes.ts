@@ -4,6 +4,7 @@ type ApplyPassedActivityOutcomeParams = {
   activityId: string;
   levelId: string;
   pointsAwarded: number;
+  scorePercent?: number;
 };
 
 export async function applyPassedActivityOutcome({
@@ -12,14 +13,27 @@ export async function applyPassedActivityOutcome({
   activityId,
   levelId,
   pointsAwarded,
+  scorePercent,
 }: ApplyPassedActivityOutcomeParams) {
-  await supabase.from("user_rewards").insert({
-    user_id: userId,
-    level_id: levelId,
-    reward_type: "points",
-    points: Math.max(0, Math.round(pointsAwarded)),
-    reason: `Completed activity: ${activityId}`,
-  });
+  const pointsReason = `Completed activity: ${activityId}`;
+  const { data: existingPointsReward } = await supabase
+    .from("user_rewards")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("reward_type", "points")
+    .eq("reason", pointsReason)
+    .limit(1)
+    .maybeSingle();
+
+  if (!existingPointsReward) {
+    await supabase.from("user_rewards").insert({
+      user_id: userId,
+      level_id: levelId,
+      reward_type: "points",
+      points: Math.max(0, Math.round(pointsAwarded)),
+      reason: pointsReason,
+    });
+  }
 
   const { data: levelData } = await supabase
     .from("levels")
@@ -66,23 +80,46 @@ export async function applyPassedActivityOutcome({
   const now = new Date().toISOString();
   const { data: currentProgress } = await supabase
     .from("level_progress")
-    .select("completed")
+    .select("completed, best_score")
     .eq("user_id", userId)
     .eq("level_number", resolvedLevelData.level_number)
     .maybeSingle();
 
+  const previousBest = typeof currentProgress?.best_score === "number" ? currentProgress.best_score : null;
+  const incomingBest = typeof scorePercent === "number" ? Math.max(0, Math.min(100, Math.round(scorePercent))) : null;
+  const bestScore =
+    incomingBest === null
+      ? previousBest
+      : previousBest === null
+        ? incomingBest
+        : Math.max(previousBest, incomingBest);
+
   await supabase
     .from("level_progress")
-    .update({ completed: true, unlocked: true, updated_at: now })
-    .eq("user_id", userId)
-    .eq("level_number", resolvedLevelData.level_number);
+    .upsert(
+      {
+        user_id: userId,
+        level_number: resolvedLevelData.level_number,
+        completed: true,
+        unlocked: true,
+        best_score: bestScore,
+        updated_at: now,
+      },
+      { onConflict: "user_id,level_number" },
+    );
 
   if (resolvedLevelData.level_number < 15) {
     await supabase
       .from("level_progress")
-      .update({ unlocked: true, updated_at: now })
-      .eq("user_id", userId)
-      .eq("level_number", resolvedLevelData.level_number + 1);
+      .upsert(
+        {
+          user_id: userId,
+          level_number: resolvedLevelData.level_number + 1,
+          unlocked: true,
+          updated_at: now,
+        },
+        { onConflict: "user_id,level_number" },
+      );
   }
 
   if (!currentProgress?.completed) {

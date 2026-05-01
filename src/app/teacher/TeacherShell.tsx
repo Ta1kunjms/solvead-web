@@ -43,7 +43,6 @@ export function TeacherShell({ children }: { children: ReactNode }) {
         <aside className="teacher-sidebar w-full lg:sticky lg:top-6 lg:w-[280px] lg:self-start">
           <div className="teacher-sidebar-scroll flex h-full flex-col gap-5 p-5">
             <div className="teacher-user-card">
-              <div className="teacher-user-avatar" aria-hidden="true" />
               <div>
                 <p className="teacher-eyebrow">Teacher Console</p>
                 <h1 className="teacher-brand-title mt-1 text-lg">SolveAd Admin</h1>

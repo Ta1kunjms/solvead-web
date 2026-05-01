@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useId, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { ActivityGameResult, HtmlActivityFrame } from "@/app/components/HtmlActivityFrame";
+import { SCREENSHOT_ACCEPT, MAX_SCREENSHOT_SIZE_BYTES, validateScreenshotFile } from "@/lib/screenshot";
 
 type ActivitySummary = {
   id: string;
@@ -73,9 +74,18 @@ export function LevelEntryCards({ levelNumber, lessonCount, activityList, copy }
   const [activeActivity, setActiveActivity] = useState<ActiveActivity | null>(null);
   const [pendingGameResult, setPendingGameResult] = useState<ActivityGameResult | null>(null);
   const [isClosingFromX, setIsClosingFromX] = useState(false);
+  const [showScreenshotModal, setShowScreenshotModal] = useState(false);
+  const [resultRequestToken, setResultRequestToken] = useState(0);
+  const [attemptError, setAttemptError] = useState<string | null>(null);
+  const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
   const titleId = useId();
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const submittedSessions = useRef<Set<string>>(new Set());
+  const pendingGameResultRef = useRef<ActivityGameResult | null>(null);
+
+  useEffect(() => {
+    pendingGameResultRef.current = pendingGameResult;
+  }, [pendingGameResult]);
 
   useEffect(() => {
     if (!activeActivity) {
@@ -117,6 +127,9 @@ export function LevelEntryCards({ levelNumber, lessonCount, activityList, copy }
   const closeWithoutFetch = () => {
     setPendingGameResult(null);
     setActiveActivity(null);
+    setAttemptError(null);
+    setScreenshotFile(null);
+    setShowScreenshotModal(false);
   };
 
   const handleCloseFromButton = async () => {
@@ -125,7 +138,13 @@ export function LevelEntryCards({ levelNumber, lessonCount, activityList, copy }
     }
 
     const sessionId = activeActivity.sessionId;
-    const hasResultForActivity = pendingGameResult?.activityId === activeActivity.id;
+    setResultRequestToken((current) => current + 1);
+    await new Promise((resolve) => {
+      window.setTimeout(resolve, 550);
+    });
+
+    const latestResult = pendingGameResultRef.current;
+    const hasResultForActivity = latestResult?.activityId === activeActivity.id;
     const alreadySubmitted = submittedSessions.current.has(sessionId);
 
     if (!hasResultForActivity || alreadySubmitted) {
@@ -133,30 +152,53 @@ export function LevelEntryCards({ levelNumber, lessonCount, activityList, copy }
       return;
     }
 
+    setShowScreenshotModal(true);
+  };
+
+  const handleScreenshotSubmit = async () => {
+    if (!activeActivity || !screenshotFile) {
+      setAttemptError("Screenshot is required");
+      return;
+    }
+
+    const screenshotValidation = await validateScreenshotFile(screenshotFile);
+    if ("error" in screenshotValidation) {
+      setAttemptError(screenshotValidation.error);
+      return;
+    }
+
+    const sessionId = activeActivity.sessionId;
+    const latestResult = pendingGameResultRef.current;
     setIsClosingFromX(true);
+
     try {
+      const formData = new FormData();
+      formData.append("activity_id", activeActivity.id);
+      formData.append("session_id", sessionId);
+      formData.append("score", String(latestResult?.score ?? 0));
+      formData.append("max_score", String(latestResult?.maxScore ?? 0));
+      formData.append("points", String(latestResult?.points ?? 0));
+      formData.append("stars", String(latestResult?.stars ?? 0));
+      formData.append("passed", String(Boolean(latestResult?.passed)));
+      formData.append("screenshot", screenshotFile);
+
       const response = await fetch("/api/activities/submit-html-result", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          activity_id: activeActivity.id,
-          session_id: sessionId,
-          score: pendingGameResult.score,
-          max_score: pendingGameResult.maxScore,
-          points: pendingGameResult.points,
-          stars: pendingGameResult.stars,
-          passed: pendingGameResult.passed,
-        }),
+        body: formData,
       });
 
       if (response.ok) {
         submittedSessions.current.add(sessionId);
+        closeWithoutFetch();
+        return;
       }
+
+      const body = await response.json().catch(() => ({}));
+      setAttemptError(body.error || "Failed to submit activity result");
     } catch {
-      // Keep the close action non-blocking if submission fails.
+      setAttemptError("Failed to submit activity result");
     } finally {
       setIsClosingFromX(false);
-      closeWithoutFetch();
     }
   };
 
@@ -166,19 +208,19 @@ export function LevelEntryCards({ levelNumber, lessonCount, activityList, copy }
         <Link
           href={`/student/levels/${levelNumber}/lesson`}
           aria-label="Open lesson"
-          className="group relative mx-auto w-full max-w-[560px] transition-transform duration-300 ease-out hover:-translate-y-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white/70"
+          className="group relative mx-auto w-full max-w-[560px] transition-transform duration-200 hover:scale-105 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white/70"
         >
           <Image
             src="/assets/lesson-activity/water-border.png"
             alt="Lesson frame"
             width={3508}
             height={2480}
-            className="h-auto w-full drop-shadow-[0_20px_40px_rgba(0,0,0,0.35)]"
+            className="h-auto w-full drop-shadow-[0_20px_40px_rgba(0,0,0,0.35)] transition-all duration-200 group-hover:drop-shadow-[0_25px_50px_rgba(255,200,100,0.4)]"
             priority
           />
-          <div className="pointer-events-none absolute inset-[18%] flex flex-col items-center justify-center text-center text-white">
+          <div className="pointer-events-none absolute inset-[18%] flex flex-col items-center justify-center text-center">
             <span className="text-xs uppercase tracking-[0.5em] text-white/90">{copy.levelLesson}</span>
-            <span className="mt-3 text-2xl font-bold drop-shadow md:text-3xl">
+            <span className="mt-3 text-2xl md:text-3xl tuna-card-title">
               {copy.levelLessonCardTitle}
             </span>
             <span className="mt-2 text-xs text-white/80">
@@ -191,18 +233,18 @@ export function LevelEntryCards({ levelNumber, lessonCount, activityList, copy }
           <Link
             href={`/student/levels/${levelNumber}/activity`}
             aria-label="Open activity"
-            className="group relative mx-auto w-full max-w-[560px] transition-transform duration-300 ease-out hover:-translate-y-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white/70"
+            className="group relative mx-auto w-full max-w-[560px] transition-transform duration-200 hover:scale-105 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white/70"
           >
             <Image
               src="/assets/lesson-activity/wooden-border.png"
               alt="Activity frame"
               width={3508}
               height={2480}
-              className="h-auto w-full drop-shadow-[0_20px_40px_rgba(0,0,0,0.35)]"
+              className="h-auto w-full drop-shadow-[0_20px_40px_rgba(0,0,0,0.35)] transition-all duration-200 group-hover:drop-shadow-[0_25px_50px_rgba(255,200,100,0.4)]"
             />
-            <div className="pointer-events-none absolute inset-[18%] flex flex-col items-center justify-center text-center text-white">
+            <div className="pointer-events-none absolute inset-[18%] flex flex-col items-center justify-center text-center">
               <span className="text-xs uppercase tracking-[0.5em] text-white/90">{copy.levelActivities}</span>
-              <span className="mt-3 text-2xl font-bold drop-shadow md:text-3xl">
+              <span className="mt-3 text-2xl md:text-3xl tuna-card-title">
                 {copy.levelActivityCardEmptyTitle}
               </span>
               <span className="mt-2 text-xs text-white/80">0 activities</span>
@@ -220,18 +262,18 @@ export function LevelEntryCards({ levelNumber, lessonCount, activityList, copy }
                 setPendingGameResult(null);
                 setActiveActivity({ ...activity, sessionId: createSessionId() });
               }}
-              className="group relative mx-auto w-full max-w-[560px] cursor-pointer bg-transparent p-0 text-left transition-transform duration-300 ease-out hover:-translate-y-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white/70"
+              className="group relative mx-auto w-full max-w-[560px] cursor-pointer bg-transparent p-0 text-left transition-transform duration-200 hover:scale-105 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white/70"
             >
               <Image
                 src="/assets/lesson-activity/wooden-border.png"
                 alt="Activity frame"
                 width={3508}
                 height={2480}
-                className="h-auto w-full drop-shadow-[0_20px_40px_rgba(0,0,0,0.35)]"
+                className="h-auto w-full drop-shadow-[0_20px_40px_rgba(0,0,0,0.35)] transition-all duration-200 group-hover:drop-shadow-[0_25px_50px_rgba(255,200,100,0.4)]"
               />
-              <div className="pointer-events-none absolute inset-[18%] flex flex-col items-center justify-center text-center text-white">
+              <div className="pointer-events-none absolute inset-[18%] flex flex-col items-center justify-center text-center">
                 <span className="text-xs uppercase tracking-[0.5em] text-white/90">{copy.levelActivities}</span>
-                <span className="mt-3 text-2xl font-bold drop-shadow md:text-3xl">{activity.displayTitle}</span>
+                <span className="mt-3 text-2xl md:text-3xl tuna-card-title">{activity.displayTitle}</span>
                 <span className="mt-2 text-xs text-white/80">
                   Activity {activity.position} of {activityCount}
                 </span>
@@ -265,7 +307,7 @@ export function LevelEntryCards({ levelNumber, lessonCount, activityList, copy }
               }}
               aria-label={copy.activityModalClose}
               disabled={isClosingFromX}
-              className="absolute right-4 top-4 z-10 inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/40 bg-slate-950/80 text-white shadow-lg backdrop-blur transition hover:bg-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+              className="absolute right-4 top-4 z-10 inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/40 bg-slate-950/80 text-white shadow-lg backdrop-blur transition hover:scale-110 hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
             >
               <span className="sr-only">{copy.activityModalClose}</span>
               <svg
@@ -285,29 +327,128 @@ export function LevelEntryCards({ levelNumber, lessonCount, activityList, copy }
 
             <div className="flex-1">
               {activeActivity.html_url ? (
-                <HtmlActivityFrame
-                  htmlUrl={activeActivity.html_url}
-                  title={`Activity HTML ${activeActivity.displayTitle}`}
-                  className="h-full w-full bg-white"
-                  sandbox="allow-scripts"
-                  expectedActivityId={activeActivity.id}
-                  onGameResult={(result) => {
-                    if (result.sessionId && result.sessionId !== activeActivity.sessionId) {
-                      return;
-                    }
+                  <HtmlActivityFrame
+                    htmlUrl={activeActivity.html_url}
+                    title={`Activity HTML ${activeActivity.displayTitle}`}
+                    className="h-full w-full bg-white"
+                    sandbox="allow-scripts"
+                    expectedActivityId={activeActivity.id}
+                    sessionId={activeActivity.sessionId}
+                    resultRequestToken={resultRequestToken}
+                    onGameResult={(result) => {
+                      if (result.sessionId && result.sessionId !== activeActivity.sessionId) {
+                        return;
+                      }
 
-                    setPendingGameResult({
-                      ...result,
-                      sessionId: activeActivity.sessionId,
-                    });
-                  }}
-                />
+                      setPendingGameResult({
+                        ...result,
+                        sessionId: activeActivity.sessionId,
+                      });
+                    }}
+                  />
               ) : (
                 <div className="flex h-full items-center justify-center p-6 text-sm text-white/80">
                   <p>{copy.activityModalNoHtml}</p>
                 </div>
               )}
             </div>
+
+            <div className="border-t border-white/10 bg-slate-950/70 px-4 py-4 sm:px-6">
+              {pendingGameResult && (
+                <div className="mx-auto flex w-full max-w-4xl items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+                  <div>
+                    <p className="text-sm font-semibold text-emerald-100">
+                      Score: {pendingGameResult.score}/{pendingGameResult.maxScore}
+                    </p>
+                    <p className="text-xs text-white/70">
+                      {pendingGameResult.passed ? "Passed!" : "Try again to improve"}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleCloseFromButton();
+                    }}
+                    disabled={isClosingFromX}
+                    className="rounded-lg border border-teal-300/40 bg-teal-400/10 px-4 py-2 text-sm font-semibold text-teal-100 transition hover:scale-105 hover:bg-teal-400/30 active:scale-95 disabled:opacity-60"
+                  >
+                    <span className="flex items-center gap-2">
+                      <svg
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                        className="h-4 w-4"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M6 6l12 12" />
+                        <path d="M18 6l-12 12" />
+                      </svg>
+                      {isClosingFromX ? "Submitting..." : "Submit with Screenshot"}
+                    </span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {showScreenshotModal && (
+              <div className="absolute inset-0 z-60 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm">
+                <div className="w-full max-w-md rounded-2xl border border-white/20 bg-slate-900/95 p-6 shadow-2xl">
+                  <h3 className="text-lg font-semibold text-white">Submit Activity Result</h3>
+                  <p className="mt-2 text-sm text-white/70">
+                    Upload a screenshot of your activity result to submit.
+                  </p>
+                  <div className="mt-6">
+                    <label className="block text-sm font-medium text-teal-100">
+                      Screenshot (JPG, PNG, WEBP)
+                    </label>
+                    <input
+                      type="file"
+                      accept={SCREENSHOT_ACCEPT}
+                      onChange={(event) => {
+                        setScreenshotFile(event.target.files?.[0] ?? null)
+                        if (attemptError) {
+                          setAttemptError(null)
+                        }
+                      }}
+                      className="mt-2 block w-full rounded-md border border-white/10 bg-slate-900/80 px-3 py-2 text-sm text-white file:mr-4 file:rounded-md file:border-0 file:bg-teal-400/20 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-teal-100"
+                    />
+                    <p className="mt-2 text-xs text-white/60">
+                      {screenshotFile ? `Selected: ${screenshotFile.name}` : "No screenshot selected"}
+                    </p>
+                  </div>
+                  {attemptError && (
+                    <p className="mt-3 rounded-lg border border-amber-300/40 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">
+                      {attemptError}
+                    </p>
+                  )}
+                  <div className="mt-6 flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowScreenshotModal(false)
+                      }}
+                      disabled={isClosingFromX}
+                      className="flex-1 rounded-lg border border-white/20 px-4 py-2 text-sm font-medium text-white transition hover:scale-105 hover:bg-white/10 active:scale-95 disabled:opacity-60"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleScreenshotSubmit()
+                      }}
+                      disabled={isClosingFromX || !screenshotFile}
+                      className="flex-1 rounded-lg bg-teal-500 px-4 py-2 text-sm font-semibold text-white transition hover:scale-105 hover:bg-teal-600 active:scale-95 disabled:opacity-60"
+                    >
+                      {isClosingFromX ? "Submitting..." : "Submit"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       ) : null}
@@ -320,6 +461,7 @@ export function ActivityPlayer({ activityId, items, onSubmitComplete }: Activity
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [result, setResult] = useState<SubmitResult | null>(null);
+  const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
 
   const requiredMissing = items.filter(
     (item) => item.is_required && !(responses[item.id]?.trim()),
@@ -346,16 +488,34 @@ export function ActivityPlayer({ activityId, items, onSubmitComplete }: Activity
       return;
     }
 
+    const screenshotValidation = await validateScreenshotFile(screenshotFile);
+    if ("error" in screenshotValidation) {
+      setSubmitError(screenshotValidation.error);
+      return;
+    }
+
+    const screenshotToUpload = screenshotFile;
+    if (!screenshotToUpload) {
+      setSubmitError("Screenshot is required");
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
-      const response = await fetch("/api/activities/submit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const formData = new FormData();
+      formData.append(
+        "payload",
+        JSON.stringify({
           activity_id: activityId,
           responses: responsesPayload,
         }),
+      );
+      formData.append("screenshot", screenshotToUpload);
+
+      const response = await fetch("/api/activities/submit", {
+        method: "POST",
+        body: formData,
       });
 
       if (!response.ok) {
@@ -491,6 +651,33 @@ export function ActivityPlayer({ activityId, items, onSubmitComplete }: Activity
           {submitError}
         </div>
       ) : null}
+
+      <div className="mt-4 rounded-lg border border-white/10 bg-slate-950/40 px-4 py-3">
+        <label className="block text-sm font-semibold text-teal-100" htmlFor={`screenshot-${activityId}`}>
+          Upload screenshot
+        </label>
+        <p className="mt-1 text-xs text-white/70">
+          Required for submission. Accepts JPG, PNG, or WEBP files up to {Math.round(MAX_SCREENSHOT_SIZE_BYTES / (1024 * 1024))}MB.
+        </p>
+        <input
+          id={`screenshot-${activityId}`}
+          type="file"
+          accept={SCREENSHOT_ACCEPT}
+          onChange={(event) => {
+            const file = event.target.files?.[0] ?? null;
+            setScreenshotFile(file);
+            if (submitError) {
+              setSubmitError(null);
+            }
+          }}
+          className="mt-3 block w-full rounded-md border border-white/10 bg-slate-900/80 px-3 py-2 text-sm text-white file:mr-4 file:rounded-md file:border-0 file:bg-teal-400/20 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-teal-100"
+        />
+        {screenshotFile ? (
+          <p className="mt-2 text-xs text-teal-100/80">Selected: {screenshotFile.name}</p>
+        ) : (
+          <p className="mt-2 text-xs text-amber-100/80">No screenshot selected yet.</p>
+        )}
+      </div>
 
       {result ? (
         <div className="mt-4 rounded-lg border border-emerald-300/40 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100">

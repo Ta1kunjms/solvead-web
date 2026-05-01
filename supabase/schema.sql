@@ -53,12 +53,15 @@ create table if not exists public.levels (
   id uuid primary key default gen_random_uuid(),
   level_number int not null unique check (level_number between 1 and 15),
   title text not null,
+  announcement text,
   geometry_focus text not null,
   shape_icon text,
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.levels add column if not exists announcement text;
 
 create table if not exists public.lessons (
   id uuid primary key default gen_random_uuid(),
@@ -127,9 +130,25 @@ create table if not exists public.activity_attempts (
   max_score int,
   passed boolean,
   feedback_summary text,
+  screenshot_path text,
+  screenshot_mime_type text,
+  screenshot_size_bytes int,
+  screenshot_uploaded_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.activity_attempts
+  add column if not exists screenshot_path text;
+
+alter table public.activity_attempts
+  add column if not exists screenshot_mime_type text;
+
+alter table public.activity_attempts
+  add column if not exists screenshot_size_bytes int;
+
+alter table public.activity_attempts
+  add column if not exists screenshot_uploaded_at timestamptz;
 
 create index if not exists activity_attempts_student_activity_idx
   on public.activity_attempts (student_id, activity_id, created_at desc);
@@ -460,6 +479,12 @@ create policy "level_progress_owner_access"
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
+drop policy if exists "level_progress_teacher_read" on public.level_progress;
+create policy "level_progress_teacher_read"
+  on public.level_progress
+  for select
+  using (public.is_teacher());
+
 drop policy if exists "app_user_roles_self_access" on public.app_user_roles;
 create policy "app_user_roles_self_access"
   on public.app_user_roles
@@ -625,6 +650,17 @@ create policy "user_rewards_owner_or_teacher"
   for select
   using (auth.uid() = user_id or public.is_teacher());
 
+drop policy if exists "user_rewards_student_insert_own" on public.user_rewards;
+create policy "user_rewards_student_insert_own"
+  on public.user_rewards
+  for insert
+  with check (
+    auth.uid() = user_id
+    and reward_type in ('points', 'star')
+    and coalesce(points, 0) between 0 and 1000
+    and coalesce(stars, 0) between 0 and 5
+  );
+
 drop policy if exists "user_rewards_teacher_write" on public.user_rewards;
 create policy "user_rewards_teacher_write"
   on public.user_rewards
@@ -787,3 +823,95 @@ create policy "activity_html_teacher_delete"
   on storage.objects
   for delete
   using (bucket_id = 'activity-html' and public.is_teacher());
+
+-- Storage bucket for student activity screenshots
+insert into storage.buckets (id, name, public)
+values ('activity-screenshots', 'activity-screenshots', false)
+on conflict (id) do update
+set public = excluded.public;
+
+drop policy if exists "activity_screenshots_student_select_own" on storage.objects;
+create policy "activity_screenshots_student_select_own"
+  on storage.objects
+  for select
+  using (
+    bucket_id = 'activity-screenshots'
+    and auth.uid() is not null
+    and owner = auth.uid()
+    and name like auth.uid() || '/%'
+  );
+
+drop policy if exists "activity_screenshots_teacher_select" on storage.objects;
+create policy "activity_screenshots_teacher_select"
+  on storage.objects
+  for select
+  using (bucket_id = 'activity-screenshots' and public.is_teacher());
+
+drop policy if exists "activity_screenshots_student_insert_own" on storage.objects;
+create policy "activity_screenshots_student_insert_own"
+  on storage.objects
+  for insert
+  with check (
+    bucket_id = 'activity-screenshots'
+    and auth.uid() is not null
+    and owner = auth.uid()
+    and name like auth.uid() || '/%'
+  );
+
+drop policy if exists "activity_screenshots_student_update_own" on storage.objects;
+create policy "activity_screenshots_student_update_own"
+  on storage.objects
+  for update
+  using (
+    bucket_id = 'activity-screenshots'
+    and auth.uid() is not null
+    and owner = auth.uid()
+    and name like auth.uid() || '/%'
+  )
+  with check (
+    bucket_id = 'activity-screenshots'
+    and auth.uid() is not null
+    and owner = auth.uid()
+    and name like auth.uid() || '/%'
+  );
+
+drop policy if exists "activity_screenshots_student_delete_own" on storage.objects;
+create policy "activity_screenshots_student_delete_own"
+  on storage.objects
+  for delete
+  using (
+    bucket_id = 'activity-screenshots'
+    and auth.uid() is not null
+    and owner = auth.uid()
+    and name like auth.uid() || '/%'
+  );
+
+-- Realtime setup for teacher auto-refresh subscriptions.
+alter table public.activity_attempts replica identity full;
+alter table public.level_progress replica identity full;
+
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    if not exists (
+      select 1
+      from pg_publication_tables
+      where pubname = 'supabase_realtime'
+        and schemaname = 'public'
+        and tablename = 'activity_attempts'
+    ) then
+      alter publication supabase_realtime add table public.activity_attempts;
+    end if;
+
+    if not exists (
+      select 1
+      from pg_publication_tables
+      where pubname = 'supabase_realtime'
+        and schemaname = 'public'
+        and tablename = 'level_progress'
+    ) then
+      alter publication supabase_realtime add table public.level_progress;
+    end if;
+  end if;
+end
+$$;

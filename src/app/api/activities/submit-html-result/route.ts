@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { applyPassedActivityOutcome } from "@/lib/activity-outcomes";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import {
+  buildScreenshotStoragePath,
+  SCREENSHOT_BUCKET,
+  validateScreenshotFile,
+} from "@/lib/screenshot";
 
 type SubmitHtmlResultRequest = {
   activity_id: string;
@@ -26,6 +31,24 @@ const asSafeText = (value: unknown) => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
+const readMultipartValue = (formData: FormData, key: string) => formData.get(key);
+
+const parseFormRequest = async (request: NextRequest) => {
+  const formData = await request.formData();
+  const screenshotEntry = readMultipartValue(formData, "screenshot");
+
+  return {
+    activity_id: asSafeText(readMultipartValue(formData, "activity_id")),
+    session_id: asSafeText(readMultipartValue(formData, "session_id")),
+    score: readMultipartValue(formData, "score"),
+    max_score: readMultipartValue(formData, "max_score"),
+    points: readMultipartValue(formData, "points"),
+    stars: readMultipartValue(formData, "stars"),
+    passed: readMultipartValue(formData, "passed"),
+    screenshot: screenshotEntry instanceof File ? screenshotEntry : null,
+  };
+};
+
 export async function POST(request: NextRequest) {
   const supabase = await getSupabaseServerClient();
 
@@ -41,21 +64,39 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = (await request.json()) as SubmitHtmlResultRequest;
+  const contentType = request.headers.get("content-type") ?? "";
+  const body = contentType.includes("multipart/form-data")
+    ? await parseFormRequest(request)
+    : ((await request.json()) as SubmitHtmlResultRequest);
+
   const activityId = asSafeText(body.activity_id);
   const sessionId = asSafeText(body.session_id);
-  const score = asFiniteNumber(body.score);
-  const maxScore = asFiniteNumber(body.max_score);
-  const points = asFiniteNumber(body.points) ?? score;
+  const rawScore = asFiniteNumber(body.score);
+  const rawMaxScore = asFiniteNumber(body.max_score);
+  const rawPoints = asFiniteNumber(body.points);
   const stars = Math.max(0, Math.min(5, Math.round(asFiniteNumber(body.stars) ?? 0)));
+  const passedInput = asFiniteNumber(body.passed);
+  const screenshot = "screenshot" in body ? body.screenshot : null;
 
-  if (!activityId || !sessionId || score === null || maxScore === null || points === null) {
+  if (!activityId || !sessionId || rawScore === null || rawMaxScore === null) {
     return NextResponse.json({ error: "Invalid request payload" }, { status: 400 });
   }
 
-  if (score < 0 || maxScore <= 0 || points < 0) {
+  const screenshotValidation = await validateScreenshotFile(screenshot);
+  if ("error" in screenshotValidation) {
+    return NextResponse.json({ error: screenshotValidation.error }, { status: 400 });
+  }
+
+  if (rawScore < 0 || rawMaxScore <= 0) {
     return NextResponse.json({ error: "Score values must be non-negative" }, { status: 400 });
   }
+
+  const maxScore = Math.max(1, Math.round(rawMaxScore));
+  const score = Math.max(0, Math.min(maxScore, Math.round(rawScore)));
+  const points =
+    rawPoints === null
+      ? score
+      : Math.max(0, Math.min(maxScore, Math.round(rawPoints)));
 
   const { data: activity, error: activityError } = await supabase
     .from("activities")
@@ -74,30 +115,14 @@ export async function POST(request: NextRequest) {
     .select("id, score, max_score, passed")
     .eq("student_id", user.id)
     .eq("activity_id", activityId)
-    .ilike("feedback_summary", `%${sessionMarker}%`)
     .order("submitted_at", { ascending: false })
+    .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  if (existingAttempt) {
-    const existingScorePct =
-      existingAttempt.max_score > 0
-        ? Math.round((Number(existingAttempt.score ?? 0) / Number(existingAttempt.max_score ?? 1)) * 100)
-        : 0;
-
-    return NextResponse.json({
-      attempt_id: existingAttempt.id,
-      duplicate: true,
-      score: existingScorePct,
-      passed: Boolean(existingAttempt.passed),
-      total_points: Number(existingAttempt.score ?? 0),
-      max_score: Number(existingAttempt.max_score ?? 0),
-    });
-  }
-
   const scorePct = Math.round((score / maxScore) * 100);
   const passingScore = Number(activity.passing_score ?? 70);
-  const passed = typeof body.passed === "boolean" ? body.passed : scorePct >= passingScore;
+  const passed = passedInput === null ? scorePct >= passingScore : Boolean(passedInput);
 
   const feedbackSummary = [
     `Score: ${scorePct}%. ${passed ? "Level unlock eligible!" : "Try again to improve."}`,
@@ -106,22 +131,63 @@ export async function POST(request: NextRequest) {
     `stars:${stars}`,
   ].join(" ");
 
-  const { data: newAttempt, error: attemptError } = await supabase
-    .from("activity_attempts")
-    .insert({
-      student_id: user.id,
-      activity_id: activity.id,
-      score: Math.round(points),
-      max_score: Math.round(maxScore),
-      passed,
-      status: "graded",
-      submitted_at: new Date().toISOString(),
-      feedback_summary: feedbackSummary,
-    })
-    .select("id")
-    .single();
+  const now = new Date().toISOString();
+  const attemptId = existingAttempt?.id ?? crypto.randomUUID();
+  const screenshotPath = buildScreenshotStoragePath(user.id, activity.id, attemptId, screenshotValidation.extension);
 
-  if (attemptError || !newAttempt) {
+  const { error: uploadError } = await supabase.storage.from(SCREENSHOT_BUCKET).upload(screenshotPath, screenshotValidation.buffer, {
+    contentType: screenshotValidation.mimeType,
+    cacheControl: "60",
+    upsert: true,
+  });
+
+  if (uploadError) {
+    return NextResponse.json({ error: uploadError.message }, { status: 500 });
+  }
+
+  const persistAttempt = existingAttempt
+    ? supabase
+        .from("activity_attempts")
+        .update({
+          score: Math.round(points),
+          max_score: Math.round(maxScore),
+          passed,
+          status: "graded",
+          submitted_at: now,
+          updated_at: now,
+          feedback_summary: feedbackSummary,
+          screenshot_path: screenshotPath,
+          screenshot_mime_type: screenshotValidation.mimeType,
+          screenshot_size_bytes: screenshotValidation.sizeBytes,
+          screenshot_uploaded_at: now,
+        })
+        .eq("id", existingAttempt.id)
+        .select("id")
+        .single()
+    : supabase
+        .from("activity_attempts")
+        .insert({
+          id: attemptId,
+          student_id: user.id,
+          activity_id: activity.id,
+          score: Math.round(points),
+          max_score: Math.round(maxScore),
+          passed,
+          status: "graded",
+          submitted_at: now,
+          feedback_summary: feedbackSummary,
+          screenshot_path: screenshotPath,
+          screenshot_mime_type: screenshotValidation.mimeType,
+          screenshot_size_bytes: screenshotValidation.sizeBytes,
+          screenshot_uploaded_at: now,
+        })
+        .select("id")
+        .single();
+
+  const { data: savedAttempt, error: attemptError } = await persistAttempt;
+
+  if (attemptError || !savedAttempt) {
+    await supabase.storage.from(SCREENSHOT_BUCKET).remove([screenshotPath]);
     return NextResponse.json({ error: "Failed to save html result" }, { status: 500 });
   }
 
@@ -132,11 +198,12 @@ export async function POST(request: NextRequest) {
       activityId,
       levelId: activity.level_id,
       pointsAwarded: points,
+      scorePercent: scorePct,
     });
   }
 
   return NextResponse.json({
-    attempt_id: newAttempt.id,
+    attempt_id: savedAttempt.id,
     duplicate: false,
     score: scorePct,
     passed,
