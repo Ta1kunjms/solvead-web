@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { LevelsCompletedGraph } from "./components/LevelsCompletedGraph";
 
 type TeacherProfile = {
   first_name: string;
@@ -72,6 +73,7 @@ export default async function TeacherDashboardPage() {
 
   const profile = teacherProfile as TeacherProfile | null;
   const classes = (classSummaries ?? []) as ClassSummary[];
+  const classItemsForGraph = classes.map((c) => ({ id: c.class_id, name: c.class_name }));
   const queue = (reflectionQueue ?? []) as ReflectionQueueItem[];
   const students = ((studentDirectory ?? []) as StudentDirectoryEntry[]).filter(Boolean);
   const studentDirectoryErrorMessage = studentDirectoryError
@@ -92,11 +94,6 @@ export default async function TeacherDashboardPage() {
             <p className="teacher-subtitle mt-2">
               Monitor class progress, review reflections, and manage lesson and activity delivery.
             </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <span className="teacher-chip">Classes: {classes.length}</span>
-            <span className="teacher-chip">Students: {totalStudents}</span>
-            <span className="teacher-chip">Queue: {unreadReflections}</span>
           </div>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
@@ -128,6 +125,10 @@ export default async function TeacherDashboardPage() {
           <p className="teacher-metric mt-2">{unreadReflections}</p>
           <p className="teacher-helper mt-1">Awaiting teacher feedback</p>
         </article>
+      </div>
+
+      <div className="teacher-panel p-5">
+        <LevelsCompletedGraph initialClasses={classItemsForGraph} />
       </div>
 
       <div className="teacher-panel p-5">

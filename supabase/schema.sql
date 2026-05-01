@@ -256,6 +256,10 @@ create table if not exists public.level_progress (
   level_number int not null check (level_number between 1 and 15),
   unlocked boolean not null default false,
   completed boolean not null default false,
+  approval_status text not null default 'approved' check (approval_status in ('pending', 'approved', 'denied')),
+  approval_by uuid references auth.users(id),
+  approval_at timestamptz,
+  approval_note text,
   best_score int,
   best_time_seconds int,
   created_at timestamptz not null default now(),
@@ -485,12 +489,25 @@ create policy "level_progress_teacher_read"
   for select
   using (public.is_teacher());
 
+drop policy if exists "level_progress_teacher_write" on public.level_progress;
+create policy "level_progress_teacher_write"
+  on public.level_progress
+  for all
+  using (public.is_teacher())
+  with check (public.is_teacher());
+
 drop policy if exists "app_user_roles_self_access" on public.app_user_roles;
 create policy "app_user_roles_self_access"
   on public.app_user_roles
   for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
+
+drop policy if exists "app_user_roles_teacher_read_all" on public.app_user_roles;
+create policy "app_user_roles_teacher_read_all"
+  on public.app_user_roles
+  for select
+  using (auth.role() = 'authenticated');
 
 drop policy if exists "teacher_profiles_self_access" on public.teacher_profiles;
 create policy "teacher_profiles_self_access"

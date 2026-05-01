@@ -8,6 +8,8 @@ type Params = {
 type LevelProgressRecord = {
   level_number: number
   completed: boolean
+  unlocked: boolean
+  approval_status: string | null
   best_score: number | null
 }
 
@@ -64,7 +66,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<P
 
   const { data: progressRows, error: progressError } = await supabase
     .from("level_progress")
-    .select("level_number, completed, best_score")
+    .select("level_number, completed, unlocked, approval_status, best_score")
     .eq("user_id", studentId)
     .order("level_number", { ascending: true })
 

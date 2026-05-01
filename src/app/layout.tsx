@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Cinzel, Nunito } from "next/font/google";
 import "./globals.css";
 import { StudentPortalMusic } from "./components/StudentPortalMusic";
+import { ProfileButtonWrapper } from "./components/ProfileButtonWrapper";
 
 const titleFont = Cinzel({
   variable: "--font-title",
@@ -32,6 +33,7 @@ export default function RootLayout({
     <html lang="en" className={`${titleFont.variable} ${uiFont.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
         <StudentPortalMusic />
+        <ProfileButtonWrapper />
         {children}
       </body>
     </html>

@@ -25,6 +25,7 @@ type ActivitySummary = {
 type ProgressRecord = {
   unlocked: boolean;
   completed: boolean;
+  approval_status: string | null;
 };
 
 type Params = {
@@ -60,7 +61,7 @@ export default async function StudentLevelEntryPage({ params }: { params: Promis
       .maybeSingle(),
     supabase
       .from("level_progress")
-      .select("unlocked, completed")
+      .select("unlocked, completed, approval_status")
       .eq("user_id", user.id)
       .eq("level_number", levelNumber)
       .maybeSingle(),
@@ -83,7 +84,9 @@ export default async function StudentLevelEntryPage({ params }: { params: Promis
 
   const levelRow = level as LevelRecord;
   const progressRow = progress as ProgressRecord | null;
-  const unlocked = progressRow?.unlocked ?? levelNumber === 1;
+  const isUnlocked = progressRow?.unlocked ?? levelNumber === 1;
+  const isApproved = progressRow?.approval_status !== "pending" && progressRow?.approval_status !== "denied";
+  const unlocked = isUnlocked && isApproved;
   const lessonCount = (lessons ?? []).length;
   const activityList = (activities ?? []) as ActivitySummary[];
 

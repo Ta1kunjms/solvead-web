@@ -80,7 +80,7 @@ export async function applyPassedActivityOutcome({
   const now = new Date().toISOString();
   const { data: currentProgress } = await supabase
     .from("level_progress")
-    .select("completed, best_score")
+    .select("completed, best_score, approval_status, unlocked")
     .eq("user_id", userId)
     .eq("level_number", resolvedLevelData.level_number)
     .maybeSingle();
@@ -101,12 +101,15 @@ export async function applyPassedActivityOutcome({
         user_id: userId,
         level_number: resolvedLevelData.level_number,
         completed: true,
-        unlocked: true,
+        approval_status: currentProgress?.approval_status === "approved" ? "pending" : currentProgress?.approval_status ?? "pending",
+        unlocked: false,
         best_score: bestScore,
         updated_at: now,
       },
       { onConflict: "user_id,level_number" },
     );
+
+  const wasApproved = currentProgress?.approval_status === "approved";
 
   if (resolvedLevelData.level_number < 15) {
     await supabase
@@ -115,14 +118,14 @@ export async function applyPassedActivityOutcome({
         {
           user_id: userId,
           level_number: resolvedLevelData.level_number + 1,
-          unlocked: true,
+          unlocked: wasApproved,
           updated_at: now,
         },
         { onConflict: "user_id,level_number" },
       );
   }
 
-  if (!currentProgress?.completed) {
+  if (!currentProgress?.completed && wasApproved) {
     await supabase.from("user_rewards").insert({
       user_id: userId,
       level_id: levelId,

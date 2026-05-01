@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { getSupabaseServerClient } from "@/lib/supabase/server"
+import { getSupabaseAdmin } from "@/lib/supabase/admin"
 
 type StudentDirectoryEntry = {
   student_id: string
@@ -54,4 +55,31 @@ export async function GET() {
     students,
     total_visible_students: students.length,
   })
+}
+
+export async function DELETE(request: NextRequest) {
+  const auth = await requireTeacher()
+  if (auth.error) {
+    return auth.error
+  }
+
+  const admin = getSupabaseAdmin()
+  if (!admin) {
+    return NextResponse.json({ error: "Admin client not configured" }, { status: 500 })
+  }
+
+  const body = await request.json().catch(() => ({}))
+  const studentId = typeof body.studentId === "string" ? body.studentId : ""
+
+  if (!studentId) {
+    return NextResponse.json({ error: "studentId is required" }, { status: 400 })
+  }
+
+  const { error } = await admin.auth.admin.deleteUser(studentId)
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 400 })
+  }
+
+  return NextResponse.json({ message: "Student and all related data deleted successfully" })
 }

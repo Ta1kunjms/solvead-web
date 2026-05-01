@@ -19,6 +19,7 @@ export interface UnlockCheckResult {
   reason: string
   passedActivities: number
   requiredActivities: number
+  approval_status?: "pending" | "approved" | "denied"
 }
 
 /**

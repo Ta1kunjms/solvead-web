@@ -32,6 +32,7 @@ type ProgressRecord = {
   level_number: number;
   unlocked: boolean;
   completed: boolean;
+  approval_status: string | null;
 };
 
 type ResearcherProfile = {
@@ -481,6 +482,7 @@ export default function Home() {
           user_id: activeUser.id,
           level_number: index + 1,
           unlocked: index === 0,
+          approval_status: index === 0 ? "approved" : "pending",
         }));
 
         await supabase.from("level_progress").upsert(levelRows, { onConflict: "user_id,level_number" });
@@ -569,7 +571,7 @@ export default function Home() {
 
     const { data: progressRows } = await supabase
       .from("level_progress")
-      .select("level_number, unlocked, completed")
+      .select("level_number, unlocked, completed, approval_status")
       .eq("user_id", activeUser.id)
       .order("level_number", { ascending: true });
 
@@ -1306,8 +1308,12 @@ export default function Home() {
       <div className="absolute inset-0 z-10">
         {LEVEL_POSITIONS.map((position) => {
           const progress = levelProgress.get(position.level);
-          const unlocked = progress?.unlocked ?? position.level === 1;
+          const isUnlocked = progress?.unlocked ?? position.level === 1;
+          const isApproved = progress?.approval_status !== "pending" && progress?.approval_status !== "denied";
+          const unlocked = isUnlocked && isApproved;
           const completed = progress?.completed ?? false;
+          const pendingApproval = progress?.approval_status === "pending";
+          const denied = progress?.approval_status === "denied";
 
           return (
             <button
@@ -1320,7 +1326,15 @@ export default function Home() {
               disabled={!unlocked}
               onClick={() => {
                 if (!unlocked) {
-                  setStatus(`Button ${position.level} is locked. Finish Button 1 tasks, activities, and tests to unlock it.`);
+                  if (pendingApproval) {
+                    setStatus(`Level ${position.level} is awaiting teacher approval.`);
+                    return;
+                  }
+                  if (denied) {
+                    setStatus(`Level ${position.level} access was denied. Contact your teacher.`);
+                    return;
+                  }
+                  setStatus(`Level ${position.level} is locked. Finish the required activities to unlock it.`);
                   return;
                 }
 
@@ -1336,32 +1350,17 @@ export default function Home() {
                   unlocked ? "group-hover:drop-shadow-[0_12px_20px_rgba(255,180,50,0.5)] group-hover:brightness-110" : "grayscale"
                 }`}
               />
-              <span className="pointer-events-none absolute left-1/2 top-[50%] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#3d220f]/82 px-1.5 py-0.5 text-[10px] font-extrabold text-[#fdeecf] opacity-0 transition-opacity group-hover:opacity-100">
+<span className="pointer-events-none absolute left-1/2 top-[50%] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#3d220f]/82 px-1.5 py-0.5 text-[10px] font-extrabold text-[#fdeecf] opacity-0 transition-opacity group-hover:opacity-100">
                 {position.level}
               </span>
-              {completed && (
-                <span className="pointer-events-none absolute -top-2 left-1/2 -translate-x-1/2 rounded-full border border-emerald-300/50 bg-emerald-400/20 px-2 py-0.5 text-[10px] font-black text-emerald-50 shadow">
-                  Cleared
-                </span>
-              )}
             </button>
           );
         })}
       </div>
 
-      <div className="pointer-events-none absolute inset-x-2 top-2 z-20 flex flex-wrap items-start gap-2 sm:inset-x-4 sm:top-3 sm:gap-3">
+      <div className="pointer-events-none absolute inset-x-2 top-[7.5rem] z-20 flex flex-wrap items-start gap-2 sm:inset-x-4 sm:top-[8rem] sm:gap-3">
         <div className="pointer-events-auto origin-top-left scale-[0.75] flex flex-col gap-2 sm:gap-3">
-          <div className="panel-card flex min-w-[220px] items-center gap-3 rounded-2xl border-[#8a6330]/45 bg-[#f4e1b6]/95 px-3 py-2.5 shadow-[0_10px_18px_rgba(53,29,7,0.3)] sm:min-w-[280px] sm:px-4 sm:py-3">
-            <div className="h-14 w-14 overflow-hidden rounded-full sm:h-16 sm:w-16">
-              <Image src={profile?.profile_icon ?? DEFAULT_PROFILE_ICON} alt="Current profile" width={80} height={80} className="h-full w-full scale-[1.45] object-cover object-center" />
-            </div>
-            <div className="flex-1 text-center sm:text-left">
-              <p className="font-display text-base tracking-[0.02em] text-[#3f260d] sm:text-3xl sm:leading-[1.1]">
-                {profile ? `${profile.first_name} ${profile.last_name}`.trim() : "Player"}
-              </p>
-              <p className="mt-1 text-xs font-black text-[#5d3c1a] sm:text-lg">{profile?.lrn ?? "Google Account"}</p>
-            </div>
-          </div>
+          {/* Old top-left profile card removed in favor of ProfileButton component */}
 
           <div className="panel-card w-full min-w-[220px] rounded-2xl border-[#8a6330]/45 bg-[#f4e1b6]/95 px-3 py-2.5 shadow-[0_10px_18px_rgba(53,29,7,0.3)] sm:min-w-[280px] sm:px-4 sm:py-3">
             <button
@@ -1425,7 +1424,7 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="pointer-events-auto ml-auto flex items-center gap-2 sm:gap-3">
+        <div className="pointer-events-auto fixed right-4 top-4 z-30 flex items-center gap-2 sm:gap-3">
           <button
             type="button"
             aria-pressed={!isVolumeMuted}
@@ -1610,19 +1609,6 @@ export default function Home() {
                 >
                   <option>English</option>
                   <option>Filipino</option>
-                </select>
-              </label>
-
-              <label className="mt-4 block text-sm font-black text-[#5e401f]">
-                {copy.fontSize}
-                <select
-                  className="mt-2 w-full rounded-xl border border-[#cda06c]/50 bg-[#fff3d8] px-3 py-2.5 text-sm font-bold text-[#4c3112] focus:outline-none focus:ring-2 focus:ring-[#c48c4b]/40"
-                  value={preferences.font_size}
-                  onChange={(event) => void savePreferences({ ...preferences, font_size: event.target.value as UserPreferences["font_size"] })}
-                >
-                  <option value="default">{copy.defaultSize}</option>
-                  <option value="large">{copy.largeSize}</option>
-                  <option value="x-large">{copy.extraLargeSize}</option>
                 </select>
               </label>
 
