@@ -1350,7 +1350,7 @@ export default function Home() {
       </div>
 
       <div className="pointer-events-none absolute inset-x-2 top-2 z-20 flex flex-wrap items-start gap-2 sm:inset-x-4 sm:top-3 sm:gap-3">
-        <div className="pointer-events-auto flex flex-col gap-2 sm:gap-3">
+        <div className="pointer-events-auto origin-top-left scale-[0.75] flex flex-col gap-2 sm:gap-3">
           <div className="panel-card flex min-w-[220px] items-center gap-3 rounded-2xl border-[#8a6330]/45 bg-[#f4e1b6]/95 px-3 py-2.5 shadow-[0_10px_18px_rgba(53,29,7,0.3)] sm:min-w-[280px] sm:px-4 sm:py-3">
             <div className="h-14 w-14 overflow-hidden rounded-full sm:h-16 sm:w-16">
               <Image src={profile?.profile_icon ?? DEFAULT_PROFILE_ICON} alt="Current profile" width={80} height={80} className="h-full w-full scale-[1.45] object-cover object-center" />
