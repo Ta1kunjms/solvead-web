@@ -18,6 +18,9 @@ const uiFont = Nunito({
 export const metadata: Metadata = {
   title: "SolveAd",
   description: "Game-inspired thesis platform with guided onboarding and level progression.",
+  icons: {
+    icon: "/favicon.png",
+  },
 };
 
 export default function RootLayout({
