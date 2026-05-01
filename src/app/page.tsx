@@ -199,7 +199,7 @@ function getErrorMessage(error: unknown): string {
 }
 
 function getAppOrigin() {
-  return process.env.NEXT_PUBLIC_APP_URL ?? (typeof window !== "undefined" ? window.location.origin : undefined);
+  return process.env.NEXT_PUBLIC_APP_URL ?? "https://solvead.vercel.app";
 }
 
 export default function Home() {

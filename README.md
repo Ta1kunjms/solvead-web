@@ -42,6 +42,7 @@ cp .env.example .env.local
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+NEXT_PUBLIC_APP_URL=https://solvead.vercel.app
 ```
 
 4. In Supabase SQL editor, run schema:
@@ -52,7 +53,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 
 - Authentication -> Providers -> Google
 - Add your OAuth Client ID and Secret
-- Add redirect URL (for local): `http://localhost:3000`
+- Add redirect URL: `https://solvead.vercel.app`
 
 6. Start development server:
 
@@ -60,7 +61,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 npm run dev
 ```
 
-Open `http://localhost:3000`.
+Open `https://solvead.vercel.app`.
 
 ## Notes
 
