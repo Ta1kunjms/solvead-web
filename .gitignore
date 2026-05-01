@@ -48,9 +48,6 @@ next-env.d.ts
 # test files
 __tests__/api/activities-submit.test.ts
 
-# assets
-public/assets/backgrounds/background-5.png
-
 # generated api folders
 src/app/api/teacher/lessons/[lessonId]/resource/
 src/app/api/teacher/levels/
