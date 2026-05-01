@@ -57,4 +57,3 @@ src/app/api/teacher/levels/
 src/app/api/teacher/students/[studentId]/attempts/
 
 # lib
-src/lib/screenshot.ts
