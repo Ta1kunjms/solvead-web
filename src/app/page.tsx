@@ -198,6 +198,10 @@ function getErrorMessage(error: unknown): string {
   return "Network error while contacting authentication service.";
 }
 
+function getAppOrigin() {
+  return process.env.NEXT_PUBLIC_APP_URL ?? (typeof window !== "undefined" ? window.location.origin : undefined);
+}
+
 export default function Home() {
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const router = useRouter();
@@ -683,6 +687,7 @@ export default function Home() {
         email: parsedIdentifier.email,
         password: form.password,
         options: {
+          emailRedirectTo: getAppOrigin(),
           data: {
             first_name: form.firstName,
             last_name: form.lastName,
@@ -815,7 +820,7 @@ export default function Home() {
       const response = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
+          redirectTo: getAppOrigin(),
         },
       });
 
