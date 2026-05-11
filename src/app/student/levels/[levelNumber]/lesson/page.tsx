@@ -3,6 +3,7 @@ import { getCopy } from "@/lib/i18n";
 import { getBaseFontSizeClass, getBrightnessMultiplier } from "@/lib/preferences";
 import { getUserPreferencesForServer } from "@/lib/preferences-server";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { LessonPageClient } from "../../components/LessonPageClient";
 
 type LessonRecord = {
   id: string;
@@ -52,12 +53,12 @@ export default async function StudentLessonPage({ params }: { params: Promise<Pa
   const lessonList = (lessons ?? []) as LessonRecord[];
 
   return (
-    <main
-      className={`min-h-screen px-6 py-10 text-white ${baseFontSizeClass}`}
-      style={{
-        backgroundColor: preferences.dark_mode ? "#020617" : "#0f172a",
-        filter: `brightness(${brightnessMultiplier})`,
-      }}
+    <LessonPageClient
+      levelNumber={levelNumber}
+      copy={copy}
+      baseFontSizeClass={baseFontSizeClass}
+      brightnessMultiplier={brightnessMultiplier}
+      darkMode={preferences.dark_mode}
     >
       <section className="mx-auto max-w-4xl rounded-2xl border border-cyan-400/30 bg-slate-900/70 p-6">
         <p className="text-sm uppercase tracking-[0.2em] text-cyan-300">Level {levelNumber} {copy.levelLesson}</p>
@@ -103,6 +104,6 @@ export default async function StudentLessonPage({ params }: { params: Promise<Pa
           </div>
         )}
       </section>
-    </main>
+    </LessonPageClient>
   );
 }

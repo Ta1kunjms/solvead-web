@@ -234,6 +234,8 @@ export default function Home() {
   const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
   const [leaderboardFetched, setLeaderboardFetched] = useState(false);
   const [leaderboardExpanded, setLeaderboardExpanded] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [isMobilePortrait, setIsMobilePortrait] = useState(false);
 
   const filteredProfileIcons = useMemo(
     () => PROFILE_ICONS.filter((icon) => !selectedGender || icon.gender === selectedGender),
@@ -648,6 +650,26 @@ export default function Home() {
   }, [preferences.sfx_level]);
 
   useEffect(() => {
+    const updateViewport = () => {
+      const touchCapable = window.matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0;
+      const mobileViewport = touchCapable && window.matchMedia("(max-width: 1024px)").matches;
+      const mobilePortrait = touchCapable && window.matchMedia("(max-width: 1024px) and (orientation: portrait)").matches;
+
+      setIsMobileViewport(mobileViewport);
+      setIsMobilePortrait(mobilePortrait);
+    };
+
+    updateViewport();
+    window.addEventListener("resize", updateViewport);
+    window.addEventListener("orientationchange", updateViewport);
+
+    return () => {
+      window.removeEventListener("resize", updateViewport);
+      window.removeEventListener("orientationchange", updateViewport);
+    };
+  }, []);
+
+  useEffect(() => {
     return () => {
       if (sliderSaveTimer.current) {
         clearTimeout(sliderSaveTimer.current);
@@ -986,6 +1008,22 @@ export default function Home() {
   const isVolumeMuted = preferences.volume_level <= 0;
   const isSfxMuted = preferences.sfx_level <= 0;
   const copy = getCopy(preferences.language);
+  const levelButtonSizeClass = isMobileViewport
+    ? "h-[clamp(56px,9vw,92px)] w-[clamp(56px,9vw,92px)]"
+    : "h-[clamp(80px,10.8vw,140px)] w-[clamp(80px,10.8vw,140px)]";
+
+  const renderRotateNotice = () => (
+    <div className="relative min-h-screen overflow-hidden bg-[#d9a55d]">
+      <div className="absolute inset-0 bg-cover bg-center" style={{ ...homeBackgroundStyle, filter: `brightness(${brightnessMultiplier})` }} />
+      <div className="solvead-overlay absolute inset-0" />
+      <div className="relative flex min-h-screen items-center justify-center p-6 text-center">
+        <div className="panel-card w-full max-w-sm px-6 py-7">
+          <h2 className="ribbon-title text-2xl text-[#553819]">Rotate your phone</h2>
+          <p className="mt-2 text-sm font-semibold text-[#5f4324]">SolveAd is available on phones in landscape mode only.</p>
+        </div>
+      </div>
+    </div>
+  );
 
   const renderAuth = () => (
     <div className="relative min-h-screen bg-cover bg-center p-4 sm:p-8" style={authBackgroundStyle}>
@@ -1308,10 +1346,10 @@ export default function Home() {
       <div className="absolute inset-0 z-10">
         {LEVEL_POSITIONS.map((position) => {
           const progress = levelProgress.get(position.level);
+          const completed = progress?.completed ?? false;
           const isUnlocked = progress?.unlocked ?? position.level === 1;
           const isApproved = progress?.approval_status !== "pending" && progress?.approval_status !== "denied";
-          const unlocked = isUnlocked && isApproved;
-          const completed = progress?.completed ?? false;
+          const unlocked = completed || (isUnlocked && isApproved);
           const pendingApproval = progress?.approval_status === "pending";
           const denied = progress?.approval_status === "denied";
 
@@ -1346,7 +1384,7 @@ export default function Home() {
                 alt={`Level ${position.level}`}
                 width={70}
                 height={70}
-                className={`h-[clamp(80px,10.8vw,140px)] w-[clamp(80px,10.8vw,140px)] drop-shadow-[0_7px_10px_rgba(39,16,4,0.48)] transition-all duration-150 group-hover:scale-105 ${
+                className={`${levelButtonSizeClass} drop-shadow-[0_7px_10px_rgba(39,16,4,0.48)] transition-all duration-150 group-hover:scale-105 ${
                   unlocked ? "group-hover:drop-shadow-[0_12px_20px_rgba(255,180,50,0.5)] group-hover:brightness-110" : "grayscale"
                 }`}
               />
@@ -1359,72 +1397,143 @@ export default function Home() {
       </div>
 
       <div className="pointer-events-none absolute inset-x-2 top-[7.5rem] z-20 flex flex-wrap items-start gap-2 sm:inset-x-4 sm:top-[8rem] sm:gap-3">
-        <div className="pointer-events-auto origin-top-left scale-[0.75] flex flex-col gap-2 sm:gap-3">
+        <div className="pointer-events-auto origin-top-left scale-[0.68] flex flex-col gap-2 sm:scale-[0.75] sm:gap-3">
           {/* Old top-left profile card removed in favor of ProfileButton component */}
 
-          <div className="panel-card w-full min-w-[220px] rounded-2xl border-[#8a6330]/45 bg-[#f4e1b6]/95 px-3 py-2.5 shadow-[0_10px_18px_rgba(53,29,7,0.3)] sm:min-w-[280px] sm:px-4 sm:py-3">
+          {leaderboardExpanded ? (
+            <div className="panel-card w-full min-w-[180px] rounded-2xl border-[#8a6330]/45 bg-[#f4e1b6]/95 px-2.5 py-2 shadow-[0_10px_18px_rgba(53,29,7,0.3)] sm:min-w-[280px] sm:px-4 sm:py-3">
+              <button
+                type="button"
+                onClick={() => {
+                  playClickSound();
+                  setLeaderboardExpanded(false);
+                }}
+                className="flex w-full items-center justify-between gap-2"
+              >
+                <h3 className="ribbon-title text-sm text-[#5a3818] sm:text-base">{copy.leaderboards}</h3>
+                <span className="text-[#5a3818]">✕</span>
+              </button>
+              {isMobileViewport ? null : (
+                <div className="mt-2 overflow-hidden rounded-xl border border-[#8d6131]/40 bg-[#d9a55f] px-3 py-2">
+                <div className="mb-2 flex items-center gap-2">
+                  <Image src="/assets/misc-buttons/Trophy Button.png" alt="Top players" width={22} height={22} className="h-5 w-5 object-contain" />
+                  <p className="text-sm font-black text-[#5a3818] sm:text-base">{copy.topPlayers}</p>
+                </div>
+                {leaderboardLoading ? (
+                  <p className="text-sm font-semibold text-[#6b4827]">Loading...</p>
+                ) : leaderboardError ? (
+                  <p className="text-sm font-semibold text-[#6b4827]">{leaderboardError}</p>
+                ) : leaderboardRows.length === 0 ? (
+                  <p className="text-sm font-semibold text-[#6b4827]">No players yet.</p>
+                ) : (
+                  <div className="space-y-1">
+                    {leaderboardRows.slice(0, 10).map((row) => {
+                      const medalSrc = LEADERBOARD_MEDALS[row.rank];
+
+                      return (
+                        <div
+                          key={row.student_id}
+                          className="flex items-center justify-between rounded-lg bg-[#f3d29f]/70 px-2 py-1.5 text-sm font-bold text-[#5a3818] sm:text-base"
+                        >
+                          <div className="flex min-w-0 items-center gap-2">
+                            {medalSrc ? (
+                              <Image
+                                src={medalSrc}
+                                alt={`Medal ${row.rank}`}
+                                width={24}
+                                height={24}
+                                className="h-5 w-5 object-contain sm:h-6 sm:w-6"
+                              />
+                            ) : (
+                              <span className="font-black">#{row.rank}</span>
+                            )}
+                            <span className="truncate">{row.student_name}</span>
+                          </div>
+                          <span className="shrink-0">{row.total_points} pts</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          ) : (
             <button
               type="button"
               onClick={() => {
-                setLeaderboardExpanded((prev) => !prev);
+                playClickSound();
+                setLeaderboardExpanded(true);
               }}
-              className="flex w-full items-center justify-between gap-2"
+              className="flex h-16 w-16 items-center justify-center rounded-full shadow-[0_8px_16px_rgba(53,29,7,0.3)] transition-transform hover:scale-110 active:scale-95 sm:h-20 sm:w-20"
             >
-              <h3 className="ribbon-title text-base text-[#5a3818]">{copy.leaderboards}</h3>
               <Image
                 src="/assets/misc-buttons/Leaderboards Button.png"
                 alt="Leaderboards"
-                width={26}
-                height={26}
-                className={`h-6 w-6 object-contain transition ${leaderboardExpanded ? "rotate-180" : ""}`}
+                width={64}
+                height={64}
+                className="h-full w-full object-contain"
               />
             </button>
-            <div className={`mt-2 overflow-hidden rounded-xl border border-[#8d6131]/40 bg-[#d9a55f] px-3 py-2 ${leaderboardExpanded ? "max-h-80" : "max-h-0 border-0 px-0 py-0"}`}>
-              <div className="mb-2 flex items-center gap-2">
+          )}
+        </div>
+
+        {isMobileViewport && leaderboardExpanded && (
+          <div className="pointer-events-auto absolute left-2 top-[7.5rem] z-30 w-[min(86vw,320px)] rounded-2xl border border-[#8d6131]/45 bg-[#f4e1b6]/98 px-3 py-3 shadow-[0_16px_28px_rgba(53,29,7,0.35)] sm:left-4 sm:top-[8rem] sm:w-[min(80vw,360px)]">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
                 <Image src="/assets/misc-buttons/Trophy Button.png" alt="Top players" width={22} height={22} className="h-5 w-5 object-contain" />
                 <p className="text-sm font-black text-[#5a3818] sm:text-base">{copy.topPlayers}</p>
               </div>
-              {leaderboardLoading ? (
-                <p className="text-sm font-semibold text-[#6b4827]">Loading...</p>
-              ) : leaderboardError ? (
-                <p className="text-sm font-semibold text-[#6b4827]">{leaderboardError}</p>
-              ) : leaderboardRows.length === 0 ? (
-                <p className="text-sm font-semibold text-[#6b4827]">No players yet.</p>
-              ) : (
-                <div className="space-y-1">
-                  {leaderboardRows.slice(0, 10).map((row) => {
-                    const medalSrc = LEADERBOARD_MEDALS[row.rank];
-
-                    return (
-                      <div
-                        key={row.student_id}
-                        className="flex items-center justify-between rounded-lg bg-[#f3d29f]/70 px-2 py-1.5 text-sm font-bold text-[#5a3818] sm:text-base"
-                      >
-                        <div className="flex min-w-0 items-center gap-2">
-                          {medalSrc ? (
-                            <Image
-                              src={medalSrc}
-                              alt={`Medal ${row.rank}`}
-                              width={24}
-                              height={24}
-                              className="h-5 w-5 object-contain sm:h-6 sm:w-6"
-                            />
-                          ) : (
-                            <span className="font-black">#{row.rank}</span>
-                          )}
-                          <span className="truncate">{row.student_name}</span>
-                        </div>
-                        <span className="shrink-0">{row.total_points} pts</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+              <button
+                type="button"
+                onClick={() => setLeaderboardExpanded(false)}
+                className="rounded-full bg-[#e8c07e] px-2 py-1 text-[11px] font-black text-[#5a3818] shadow"
+              >
+                Close
+              </button>
             </div>
-          </div>
-        </div>
 
-        <div className="pointer-events-auto fixed right-4 top-4 z-30 flex items-center gap-2 sm:gap-3">
+            {leaderboardLoading ? (
+              <p className="text-sm font-semibold text-[#6b4827]">Loading...</p>
+            ) : leaderboardError ? (
+              <p className="text-sm font-semibold text-[#6b4827]">{leaderboardError}</p>
+            ) : leaderboardRows.length === 0 ? (
+              <p className="text-sm font-semibold text-[#6b4827]">No players yet.</p>
+            ) : (
+              <div className="max-h-[48vh] space-y-1 overflow-auto pr-1">
+                {leaderboardRows.slice(0, 10).map((row) => {
+                  const medalSrc = LEADERBOARD_MEDALS[row.rank];
+
+                  return (
+                    <div
+                      key={row.student_id}
+                      className="flex items-center justify-between rounded-lg bg-[#f3d29f]/70 px-2 py-1.5 text-sm font-bold text-[#5a3818]"
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        {medalSrc ? (
+                          <Image
+                            src={medalSrc}
+                            alt={`Medal ${row.rank}`}
+                            width={24}
+                            height={24}
+                            className="h-5 w-5 object-contain"
+                          />
+                        ) : (
+                          <span className="font-black">#{row.rank}</span>
+                        )}
+                        <span className="truncate">{row.student_name}</span>
+                      </div>
+                      <span className="shrink-0">{row.total_points} pts</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="pointer-events-auto fixed right-2 top-2 z-30 flex items-center gap-1.5 sm:right-4 sm:top-4 sm:gap-3">
           <button
             type="button"
             aria-pressed={!isVolumeMuted}
@@ -1442,7 +1551,7 @@ export default function Home() {
               savePreferencesDebounced(next);
               syncBackgroundAudio(next);
             }}
-            className="flex h-14 w-14 items-center justify-center border-0 bg-transparent p-0 shadow-none transition hover:scale-105"
+            className="flex h-11 w-11 items-center justify-center border-0 bg-transparent p-0 shadow-none transition hover:scale-105 sm:h-14 sm:w-14"
           >
             <Image
               src="/assets/misc-buttons/Volume Button.png"
@@ -1470,7 +1579,7 @@ export default function Home() {
               savePreferencesDebounced(next);
               syncBackgroundAudio(next);
             }}
-            className="flex h-14 w-14 items-center justify-center border-0 bg-transparent p-0 shadow-none transition hover:scale-105"
+            className="flex h-11 w-11 items-center justify-center border-0 bg-transparent p-0 shadow-none transition hover:scale-105 sm:h-14 sm:w-14"
           >
             <Image
               src="/assets/misc-buttons/Sound Effects Button.png"
@@ -1482,7 +1591,7 @@ export default function Home() {
           </button>
 
           <button
-            className="flex h-14 w-14 items-center justify-center border-0 bg-transparent p-0 shadow-none transition hover:scale-105"
+            className="flex h-11 w-11 items-center justify-center border-0 bg-transparent p-0 shadow-none transition hover:scale-105 sm:h-14 sm:w-14"
             onClick={() => {
               playClickSound();
               setShowSettings((previous) => !previous);
@@ -1502,8 +1611,8 @@ export default function Home() {
       </div>
 
       <div className="pointer-events-none absolute inset-x-2 bottom-2 z-20 flex flex-wrap items-center justify-between gap-2 sm:inset-x-4 sm:bottom-3">
-        <p className="pointer-events-auto max-w-[72vw] truncate rounded-lg bg-[#f8edcf]/95 px-3 py-2 text-xs font-extrabold text-[#5f4220] shadow">{status}</p>
-        <button type="button" onClick={handleSignOut} className="pointer-events-auto control-button rounded-full px-4 py-2 text-xs font-black text-[#5f3f1f]">
+        <p className="pointer-events-auto max-w-[72vw] truncate rounded-lg bg-[#f8edcf]/95 px-2.5 py-1.5 text-[11px] font-extrabold text-[#5f4220] shadow sm:px-3 sm:py-2 sm:text-xs">{status}</p>
+        <button type="button" onClick={handleSignOut} className="pointer-events-auto control-button rounded-full px-3 py-1.5 text-[11px] font-black text-[#5f3f1f] sm:px-4 sm:py-2 sm:text-xs">
           Sign out
         </button>
       </div>
@@ -1776,6 +1885,10 @@ export default function Home() {
     </div>
   );
 
+  if (isMobilePortrait) {
+    return renderRotateNotice();
+  }
+
   if (stage === "profile") {
     return renderProfileSelection();
   }
@@ -1798,3 +1911,4 @@ export default function Home() {
 
   return renderAuth();
 }
+

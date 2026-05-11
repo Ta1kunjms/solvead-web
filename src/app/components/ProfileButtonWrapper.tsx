@@ -1,8 +1,6 @@
 "use client";
 
-import dynamic from "next/dynamic";
-
-const ProfileButton = dynamic(() => import("./ProfileButton"), { ssr: false });
+import ProfileButton from "./ProfileButton";
 
 export function ProfileButtonWrapper() {
   return <ProfileButton />;

@@ -102,7 +102,8 @@ export async function applyPassedActivityOutcome({
         level_number: resolvedLevelData.level_number,
         completed: true,
         approval_status: currentProgress?.approval_status === "approved" ? "pending" : currentProgress?.approval_status ?? "pending",
-        unlocked: false,
+        // Keep the completed level unlocked so students can revisit it after completion
+        unlocked: true,
         best_score: bestScore,
         updated_at: now,
       },

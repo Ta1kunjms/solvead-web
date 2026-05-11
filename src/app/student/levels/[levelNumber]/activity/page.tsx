@@ -6,6 +6,7 @@ import { getBaseFontSizeClass, getBrightnessMultiplier } from "@/lib/preferences
 import { getUserPreferencesForServer } from "@/lib/preferences-server";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { ActivityPlayerWrapper } from "../../../components/ActivityPlayerWrapper";
+import { ActivityPageClient } from "../../../components/ActivityPageClient";
 
 type ActivityRecord = {
   id: string;
@@ -90,12 +91,12 @@ export default async function StudentActivityPage({ params }: { params: Promise<
   }
 
   return (
-    <main
-      className={`min-h-screen px-6 py-10 text-white ${baseFontSizeClass}`}
-      style={{
-        backgroundColor: preferences.dark_mode ? "#020617" : "#0f172a",
-        filter: `brightness(${brightnessMultiplier})`,
-      }}
+    <ActivityPageClient
+      levelNumber={levelNumber}
+      copy={copy}
+      baseFontSizeClass={baseFontSizeClass}
+      brightnessMultiplier={brightnessMultiplier}
+      darkMode={preferences.dark_mode}
     >
       <section className="mx-auto max-w-5xl rounded-2xl border border-teal-400/30 bg-slate-900/70 p-6">
         <p className="text-sm uppercase tracking-[0.2em] text-teal-300">Level {levelNumber} {copy.levelActivities}</p>
@@ -177,6 +178,6 @@ export default async function StudentActivityPage({ params }: { params: Promise<
           </Link>
         </div>
       </section>
-    </main>
+    </ActivityPageClient>
   );
 }
