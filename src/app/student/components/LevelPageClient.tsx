@@ -13,7 +13,15 @@ type ActivitySummary = {
 };
 
 type Copy = {
-  [key: string]: string;
+  levelLesson: string;
+  levelActivities: string;
+  levelLessonCardTitle: string;
+  levelActivityCardEmptyTitle: string;
+  activityModalClose: string;
+  activityModalNoHtml: string;
+  activityModalOpenList: string;
+  activityModalOpenNewTab: string;
+  backToMap?: string;
 };
 
 type LevelPageClientProps = {

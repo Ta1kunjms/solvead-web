@@ -3,7 +3,7 @@ import { getCopy } from "@/lib/i18n";
 import { getBaseFontSizeClass, getBrightnessMultiplier } from "@/lib/preferences";
 import { getUserPreferencesForServer } from "@/lib/preferences-server";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
-import { LessonPageClient } from "../../components/LessonPageClient";
+import { LessonPageClient } from "../../../components/LessonPageClient";
 
 type LessonRecord = {
   id: string;
