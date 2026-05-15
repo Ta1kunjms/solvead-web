@@ -63,6 +63,16 @@ npm run dev
 
 Open `https://solvead.vercel.app`.
 
+## Android Install
+
+When the site is deployed over HTTPS, Android users can install it directly from Chrome:
+
+1. Open the site in Chrome on Android.
+2. Wait for Chrome to show the install prompt, or open the browser menu and choose Install app / Add to Home screen.
+3. Launch SolveAd from the home screen icon to use it like an app.
+
+If the install option does not appear, the site usually needs a valid manifest, a service worker, and an HTTPS deployment.
+
 ## Notes
 
 - Manual login uses an internal synthetic email format: `LRN@solvead.local`.
