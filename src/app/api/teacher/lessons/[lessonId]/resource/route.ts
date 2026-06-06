@@ -52,23 +52,14 @@ async function requireTeacher() {
 async function verifyLessonAccess(
   supabase: NonNullable<Awaited<ReturnType<typeof getSupabaseServerClient>>>,
   lessonId: string,
-  userId: string,
 ) {
   const { data: lesson } = await supabase
     .from("lessons")
-    .select("id, created_by")
+    .select("id")
     .eq("id", lessonId)
     .maybeSingle();
 
-  if (!lesson) {
-    return false;
-  }
-
-  if (lesson.created_by && lesson.created_by !== userId) {
-    return false;
-  }
-
-  return true;
+  return Boolean(lesson);
 }
 
 function getExtension(fileName: string) {
@@ -86,14 +77,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<P
     return auth.error;
   }
 
-  const { supabase, userId } = auth;
+  const { supabase } = auth;
   if (!supabase) {
     return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
   }
 
   const { lessonId } = await params;
 
-  if (!(await verifyLessonAccess(supabase, lessonId, userId))) {
+  if (!(await verifyLessonAccess(supabase, lessonId))) {
     return NextResponse.json({ error: "Lesson not found" }, { status: 404 });
   }
 
@@ -154,14 +145,14 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
     return auth.error;
   }
 
-  const { supabase, userId } = auth;
+  const { supabase } = auth;
   if (!supabase) {
     return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
   }
 
   const { lessonId } = await params;
 
-  if (!(await verifyLessonAccess(supabase, lessonId, userId))) {
+  if (!(await verifyLessonAccess(supabase, lessonId))) {
     return NextResponse.json({ error: "Lesson not found" }, { status: 404 });
   }
 
