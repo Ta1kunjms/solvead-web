@@ -92,6 +92,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<P
   }
 
   const filePath = `activities/${activityId}/activity.html`;
+
+  await supabase.storage.from(HTML_BUCKET).remove([filePath]);
+
   const fileBuffer = Buffer.from(await file.arrayBuffer());
 
   const { error: uploadError } = await supabase.storage
@@ -99,7 +102,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<P
     .upload(filePath, fileBuffer, {
       contentType: "text/html; charset=utf-8",
       cacheControl: "3600",
-      upsert: true,
+      upsert: false,
     });
 
   if (uploadError) {
