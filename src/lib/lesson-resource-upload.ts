@@ -1,8 +1,15 @@
 export type ResourceUploadProgress = (percent: number) => void;
 
-export type ResourceUploadResult = {
-  path: string;
-  ppt_url: string;
+export type SignedUrlResponse = {
+  path?: string;
+  token?: string;
+  signedUrl?: string;
+};
+
+export type FinalizeResponse = {
+  ppt_url?: string;
+  html_url?: string;
+  path?: string;
 };
 
 export class ResourceUploadError extends Error {
@@ -15,18 +22,23 @@ export class ResourceUploadError extends Error {
   }
 }
 
-export async function uploadLessonResource(params: {
-  lessonId: string;
+type UploadToSignedUrlParams = {
+  signUrl: string;
+  finalizeUrl: string;
   file: File;
   onProgress?: ResourceUploadProgress;
-}): Promise<ResourceUploadResult> {
-  const { lessonId, file, onProgress } = params;
+};
 
-  const signResponse = await fetch(
-    `/api/teacher/lessons/${lessonId}/resource/upload-url?name=${encodeURIComponent(file.name)}`,
-  );
-
-  const signBody = await signResponse.json().catch(() => ({}));
+export async function uploadToSignedUrl({
+  signUrl,
+  finalizeUrl,
+  file,
+  onProgress,
+}: UploadToSignedUrlParams): Promise<{ path: string; url: string }> {
+  const signResponse = await fetch(signUrl);
+  const signBody = (await signResponse.json().catch(() => ({}))) as SignedUrlResponse & {
+    error?: string;
+  };
   if (!signResponse.ok) {
     throw new ResourceUploadError(
       signBody.error || `Could not start upload (HTTP ${signResponse.status})`,
@@ -34,12 +46,7 @@ export async function uploadLessonResource(params: {
     );
   }
 
-  const { path, token, signedUrl } = signBody as {
-    path?: string;
-    token?: string;
-    signedUrl?: string;
-  };
-
+  const { path, token, signedUrl } = signBody;
   if (!path || !token || !signedUrl) {
     throw new ResourceUploadError("Upload service did not return a valid signed URL");
   }
@@ -76,22 +83,60 @@ export async function uploadLessonResource(params: {
     xhr.send(file);
   });
 
-  const finalizeResponse = await fetch(`/api/teacher/lessons/${lessonId}/resource`, {
+  const finalizeResponse = await fetch(finalizeUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ path, contentType }),
   });
 
-  const finalizeBody = await finalizeResponse.json().catch(() => ({}));
+  const finalizeBody = (await finalizeResponse.json().catch(() => ({}))) as FinalizeResponse;
   if (!finalizeResponse.ok) {
     throw new ResourceUploadError(
-      finalizeBody.error || `Upload finished but the link could not be saved (HTTP ${finalizeResponse.status})`,
+      (finalizeBody as { error?: string })?.error ||
+        `Upload finished but the link could not be saved (HTTP ${finalizeResponse.status})`,
       finalizeResponse.status,
     );
   }
 
-  return {
-    path,
-    ppt_url: finalizeBody.ppt_url as string,
-  };
+  const publicUrl = finalizeBody.ppt_url || finalizeBody.html_url;
+  if (!publicUrl) {
+    throw new ResourceUploadError("Upload service did not return a file URL");
+  }
+
+  return { path, url: publicUrl };
+}
+
+export type ResourceUploadResult = {
+  path: string;
+  ppt_url: string;
+};
+
+export async function uploadLessonResource(params: {
+  lessonId: string;
+  file: File;
+  onProgress?: ResourceUploadProgress;
+}): Promise<ResourceUploadResult> {
+  const { lessonId, file, onProgress } = params;
+  const { path, url } = await uploadToSignedUrl({
+    signUrl: `/api/teacher/lessons/${lessonId}/resource/upload-url?name=${encodeURIComponent(file.name)}`,
+    finalizeUrl: `/api/teacher/lessons/${lessonId}/resource`,
+    file,
+    onProgress,
+  });
+  return { path, ppt_url: url };
+}
+
+export async function uploadActivityHtml(params: {
+  activityId: string;
+  file: File;
+  onProgress?: ResourceUploadProgress;
+}): Promise<{ path: string; html_url: string }> {
+  const { activityId, file, onProgress } = params;
+  const { path, url } = await uploadToSignedUrl({
+    signUrl: `/api/teacher/activities/${activityId}/html/upload-url?name=${encodeURIComponent(file.name)}`,
+    finalizeUrl: `/api/teacher/activities/${activityId}/html`,
+    file,
+    onProgress,
+  });
+  return { path, html_url: url };
 }

@@ -421,7 +421,7 @@ export function LevelEntryCards({ levelNumber, lessonCount, lessonResourceUrl, a
                     htmlUrl={activeActivity.html_url}
                     title={`Activity HTML ${activeActivity.displayTitle}`}
                     className="h-full w-full bg-white"
-                    sandbox="allow-scripts"
+                    sandbox="allow-scripts allow-same-origin"
                     expectedActivityId={activeActivity.id}
                     sessionId={activeActivity.sessionId}
                     resultRequestToken={resultRequestToken}

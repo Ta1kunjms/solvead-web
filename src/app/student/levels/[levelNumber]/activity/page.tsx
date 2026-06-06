@@ -145,7 +145,7 @@ export default async function StudentActivityPage({ params }: { params: Promise<
                           htmlUrl={activity.html_url}
                           title={`Activity HTML ${activity.title}`}
                           className="mt-3 h-[420px] w-full rounded-lg border border-teal-300/30 bg-white"
-                          sandbox="allow-scripts"
+                          sandbox="allow-scripts allow-same-origin"
                         />
                       </div>
                     )}

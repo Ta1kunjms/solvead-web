@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { HtmlActivityFrame } from "@/app/components/HtmlActivityFrame"
+import { uploadActivityHtml, ResourceUploadError } from "@/lib/lesson-resource-upload"
 
 type Activity = {
   id: string
@@ -39,6 +40,7 @@ export function ActivityEditorPanel({ activity, levelNumber, levelTitle }: Props
   const [htmlUrl, setHtmlUrl] = useState<string | null>(activity.html_url ?? null)
   const [htmlFile, setHtmlFile] = useState<File | null>(null)
   const [isUploadingHtml, setIsUploadingHtml] = useState(false)
+  const [htmlUploadProgress, setHtmlUploadProgress] = useState(0)
   const [htmlUploadError, setHtmlUploadError] = useState<string | null>(null)
 
   const saveActivity = async () => {
@@ -100,30 +102,28 @@ export function ActivityEditorPanel({ activity, levelNumber, levelTitle }: Props
     }
 
     setIsUploadingHtml(true)
+    setHtmlUploadProgress(0)
     setHtmlUploadError(null)
 
     try {
-      const formData = new FormData()
-      formData.append("file", htmlFile)
-
-      const response = await fetch(`/api/teacher/activities/${activity.id}/html`, {
-        method: "POST",
-        body: formData,
+      const { html_url } = await uploadActivityHtml({
+        activityId: activity.id,
+        file: htmlFile,
+        onProgress: setHtmlUploadProgress,
       })
-
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}))
-        setHtmlUploadError(body.error || `Upload failed (HTTP ${response.status})`)
-        return
-      }
-
-      const body = await response.json()
-      setHtmlUrl(body.html_url || null)
+      setHtmlUrl(html_url)
       setHtmlFile(null)
     } catch (err) {
-      setHtmlUploadError(err instanceof Error ? err.message : "Unknown error")
+      setHtmlUploadError(
+        err instanceof ResourceUploadError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Unknown error",
+      )
     } finally {
       setIsUploadingHtml(false)
+      setHtmlUploadProgress(0)
     }
   }
 
@@ -283,6 +283,7 @@ export function ActivityEditorPanel({ activity, levelNumber, levelTitle }: Props
               const selected = event.target.files?.[0] ?? null
               setHtmlFile(selected)
               setHtmlUploadError(null)
+              setHtmlUploadProgress(0)
             }}
             className="teacher-input"
           />
@@ -292,7 +293,7 @@ export function ActivityEditorPanel({ activity, levelNumber, levelTitle }: Props
               disabled={isUploadingHtml || !htmlFile}
               className="teacher-button disabled:opacity-50"
             >
-              {isUploadingHtml ? "Uploading..." : "Upload HTML"}
+              {isUploadingHtml ? `Uploading ${htmlUploadProgress}%` : "Upload HTML"}
             </button>
             {htmlUrl && (
               <button
@@ -304,6 +305,14 @@ export function ActivityEditorPanel({ activity, levelNumber, levelTitle }: Props
               </button>
             )}
           </div>
+          {isUploadingHtml && (
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+              <div
+                className="h-full bg-teal-500 transition-[width] duration-150"
+                style={{ width: `${htmlUploadProgress}%` }}
+              />
+            </div>
+          )}
         </div>
 
         {htmlUploadError && <p className="teacher-alert teacher-alert--error">{htmlUploadError}</p>}

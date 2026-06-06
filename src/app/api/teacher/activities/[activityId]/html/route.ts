@@ -1,5 +1,5 @@
-import sanitizeHtml from "sanitize-html";
 import { NextRequest, NextResponse } from "next/server";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 type Params = {
@@ -7,7 +7,6 @@ type Params = {
 };
 
 const HTML_BUCKET = "activity-html";
-const MAX_HTML_SIZE = 200_000_000;
 
 async function requireTeacher() {
   const supabase = await getSupabaseServerClient();
@@ -55,69 +54,6 @@ async function verifyActivityAccess(
   return true;
 }
 
-const sanitizeOptions = {
-  allowVulnerableTags: true,
-  allowedTags: [
-    "html",
-    "head",
-    "body",
-    "title",
-    "meta",
-    "style",
-    "link",
-    "script",
-    "section",
-    "article",
-    "header",
-    "footer",
-    "main",
-    "div",
-    "span",
-    "p",
-    "br",
-    "h1",
-    "h2",
-    "h3",
-    "h4",
-    "h5",
-    "h6",
-    "ul",
-    "ol",
-    "li",
-    "table",
-    "thead",
-    "tbody",
-    "tr",
-    "th",
-    "td",
-    "strong",
-    "em",
-    "b",
-    "i",
-    "u",
-    "code",
-    "pre",
-    "blockquote",
-    "hr",
-    "img",
-    "a",
-  ],
-  allowedAttributes: {
-    a: ["href", "name", "target", "rel"],
-    img: ["src", "alt", "title", "width", "height"],
-    link: ["rel", "href", "type", "media"],
-    script: ["src", "type", "async", "defer"],
-    meta: ["charset", "name", "content"],
-    "*": ["class", "id", "data-*", "aria-*"],
-  },
-  allowedSchemes: ["http", "https", "mailto"],
-  allowedSchemesByTag: {
-    img: ["http", "https", "data"],
-  },
-  allowProtocolRelative: false,
-  disallowedTagsMode: "discard",
-};
-
 export async function POST(request: NextRequest, { params }: { params: Promise<Params> }) {
   const auth = await requireTeacher();
   if (auth.error) {
@@ -135,56 +71,58 @@ export async function POST(request: NextRequest, { params }: { params: Promise<P
     return NextResponse.json({ error: "Activity not found" }, { status: 404 });
   }
 
-  const formData = await request.formData();
-  const file = formData.get("file");
-
-  if (!file || !(file instanceof File)) {
-    return NextResponse.json({ error: "HTML file is required" }, { status: 400 });
-  }
-
-  const fileName = file.name.toLowerCase();
-  if (!fileName.endsWith(".html") && !fileName.endsWith(".htm")) {
-    return NextResponse.json({ error: "Only .html files are supported" }, { status: 400 });
-  }
-
-  if (file.size === 0) {
-    return NextResponse.json({ error: "HTML file is empty" }, { status: 400 });
-  }
-
-  if (file.size > MAX_HTML_SIZE) {
-    return NextResponse.json({ error: "HTML file exceeds 200MB" }, { status: 400 });
-  }
-
-  const rawHtml = await file.text();
-  const sanitizedHtml = sanitizeHtml(rawHtml, sanitizeOptions).trim();
-
-  if (!sanitizedHtml) {
-    return NextResponse.json({ error: "HTML content is empty after sanitization" }, { status: 400 });
-  }
-
-  const filePath = `activities/${activityId}/activity.html`;
-  let uploadResult;
+  let payload: { path?: unknown; contentType?: unknown } = {};
   try {
-    uploadResult = await supabase.storage
-      .from(HTML_BUCKET)
-      .upload(filePath, Buffer.from(sanitizedHtml), {
-        contentType: "text/html; charset=utf-8",
-        cacheControl: "3600",
-        upsert: true,
-      });
-  } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Storage upload failed" },
-      { status: 500 },
-    );
+    payload = (await request.json()) as { path?: unknown; contentType?: unknown };
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { error: uploadError } = uploadResult;
-  if (uploadError) {
-    return NextResponse.json({ error: uploadError.message }, { status: 500 });
+  const path = typeof payload.path === "string" ? payload.path.trim() : "";
+  const expectedPath = `activities/${activityId}/activity.html`;
+  if (!path || path !== expectedPath) {
+    return NextResponse.json({ error: "Resource path does not match this activity" }, { status: 400 });
   }
 
-  const { data: publicUrlData } = supabase.storage.from(HTML_BUCKET).getPublicUrl(filePath);
+  const requestedContentType =
+    typeof payload.contentType === "string" && payload.contentType.trim().length > 0
+      ? payload.contentType.trim()
+      : null;
+
+  if (requestedContentType) {
+    const admin = getSupabaseAdmin();
+    if (admin) {
+      const { data: existing, error: readError } = await admin
+        .from("storage.objects")
+        .select("metadata")
+        .eq("bucket_id", HTML_BUCKET)
+        .eq("name", path)
+        .maybeSingle();
+
+      if (readError) {
+        return NextResponse.json({ error: readError.message }, { status: 500 });
+      }
+
+      const previousMetadata =
+        existing?.metadata && typeof existing.metadata === "object" && !Array.isArray(existing.metadata)
+          ? (existing.metadata as Record<string, unknown>)
+          : {};
+
+      const nextMetadata = { ...previousMetadata, mimetype: requestedContentType };
+
+      const { error: metaError } = await admin
+        .from("storage.objects")
+        .update({ metadata: nextMetadata })
+        .eq("bucket_id", HTML_BUCKET)
+        .eq("name", path);
+
+      if (metaError) {
+        return NextResponse.json({ error: metaError.message }, { status: 500 });
+      }
+    }
+  }
+
+  const { data: publicUrlData } = supabase.storage.from(HTML_BUCKET).getPublicUrl(path);
   const htmlUrl = publicUrlData.publicUrl;
 
   const { error: updateError } = await supabase
@@ -196,7 +134,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<P
     return NextResponse.json({ error: updateError.message }, { status: 500 });
   }
 
-  return NextResponse.json({ html_url: htmlUrl }, { status: 200 });
+  return NextResponse.json({ html_url: htmlUrl, path }, { status: 200 });
 }
 
 export async function DELETE(_request: NextRequest, { params }: { params: Promise<Params> }) {
