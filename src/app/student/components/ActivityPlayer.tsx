@@ -121,6 +121,7 @@ export function LevelEntryCards({ levelNumber, lessonCount, lessonResourceUrl, a
   const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
   const [screenshotPreviewUrl, setScreenshotPreviewUrl] = useState<string | null>(null);
   const [isCapturingScreenshot, setIsCapturingScreenshot] = useState(false);
+  const [hasAutoDetectedResult, setHasAutoDetectedResult] = useState(false);
   const titleId = useId();
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const activityContentRef = useRef<HTMLDivElement | null>(null);
@@ -196,16 +197,14 @@ export function LevelEntryCards({ levelNumber, lessonCount, lessonResourceUrl, a
     const hasResultForActivity = latestResult?.activityId === activeActivity.id;
     const alreadySubmitted = submittedSessions.current.has(sessionId);
 
-    if (!hasResultForActivity || alreadySubmitted) {
+    if (alreadySubmitted) {
       closeWithoutFetch();
       return;
     }
 
     setShowScreenshotModal(true);
+    setHasAutoDetectedResult(hasResultForActivity);
 
-    // Auto-capture a screenshot of the activity area. If html2canvas succeeds the
-    // student can still override the file; if it fails (e.g. cross-origin iframe)
-    // we keep the manual file input active and surface a friendly error.
     setIsCapturingScreenshot(true);
     setAttemptError(null);
     const captured = await captureElementAsPngFile(
@@ -445,43 +444,52 @@ export function LevelEntryCards({ levelNumber, lessonCount, lessonResourceUrl, a
             </div>
 
             <div className="border-t border-white/10 bg-slate-950/70 px-4 py-4 sm:px-6">
-              {pendingGameResult && (
-                <div className="mx-auto flex w-full max-w-4xl items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-3">
-                  <div>
-                    <p className="text-sm font-semibold text-emerald-100">
-                      Score: {pendingGameResult.score}/{pendingGameResult.maxScore}
-                    </p>
-                    <p className="text-xs text-white/70">
-                      {pendingGameResult.passed ? "Passed!" : "Try again to improve"}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void handleCloseFromButton();
-                    }}
-                    disabled={isClosingFromX}
-                    className="rounded-lg border border-teal-300/40 bg-teal-400/10 px-4 py-2 text-sm font-semibold text-teal-100 transition hover:scale-105 hover:bg-teal-400/30 active:scale-95 disabled:opacity-60"
-                  >
-                    <span className="flex items-center gap-2">
-                      <svg
-                        viewBox="0 0 24 24"
-                        aria-hidden="true"
-                        className="h-4 w-4"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <path d="M6 6l12 12" />
-                        <path d="M18 6l-12 12" />
-                      </svg>
-                      {isClosingFromX ? "Submitting..." : "Submit with Screenshot"}
-                    </span>
-                  </button>
+              <div className="mx-auto flex w-full max-w-4xl items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+                <div>
+                  {pendingGameResult ? (
+                    <>
+                      <p className="text-sm font-semibold text-emerald-100">
+                        Score: {pendingGameResult.score}/{pendingGameResult.maxScore}
+                      </p>
+                      <p className="text-xs text-white/70">
+                        {pendingGameResult.passed ? "Passed!" : "Try again to improve"}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm font-semibold text-teal-100">Finished the activity?</p>
+                      <p className="text-xs text-white/70">
+                        Submit when you&apos;re done. Your teacher will review the screenshot.
+                      </p>
+                    </>
+                  )}
                 </div>
-              )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleCloseFromButton();
+                  }}
+                  disabled={isClosingFromX}
+                  className="rounded-lg border border-teal-300/40 bg-teal-400/10 px-4 py-2 text-sm font-semibold text-teal-100 transition hover:scale-105 hover:bg-teal-400/30 active:scale-95 disabled:opacity-60"
+                >
+                  <span className="flex items-center gap-2">
+                    <svg
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                      className="h-4 w-4"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M6 6l12 12" />
+                      <path d="M18 6l-12 12" />
+                    </svg>
+                    {isClosingFromX ? "Submitting..." : "Submit Activity"}
+                  </span>
+                </button>
+              </div>
             </div>
 
             {showScreenshotModal && (
@@ -491,7 +499,9 @@ export function LevelEntryCards({ levelNumber, lessonCount, lessonResourceUrl, a
                   <p className="mt-2 text-sm text-white/70">
                     {isCapturingScreenshot
                       ? "Capturing your activity automatically..."
-                      : "A screenshot has been captured. You can replace it before submitting."}
+                      : hasAutoDetectedResult
+                        ? "A screenshot has been captured. You can replace it before submitting."
+                        : "We could not auto-detect a score. Your teacher will review the screenshot."}
                   </p>
                   <div className="mt-6">
                     <label className="block text-sm font-medium text-teal-100">

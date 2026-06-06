@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
 export type ActivityGameResult = {
   activityId: string;
@@ -23,273 +23,133 @@ type Props = {
   onGameResult?: (result: ActivityGameResult) => void;
 };
 
-const HTML_HINT = /<\s*(?:!doctype|html|head|body)\b/i;
+const SOLVEAD_RESULT_TYPES = new Set(["solvead:activity-result", "solvead.activity.result"]);
 
-const looksLikeHtml = (value: string) => HTML_HINT.test(value);
-
-const getBaseHref = (value: string) => {
-  try {
-    const url = new URL(value);
-    url.hash = "";
-    url.search = "";
-    url.pathname = url.pathname.replace(/[^/]*$/, "");
-    return url.toString();
-  } catch {
-    return null;
-  }
-};
-
-const injectBaseTag = (html: string, baseHref: string | null) => {
-  if (!baseHref || /<base\s/i.test(html)) {
-    return html;
-  }
-
-  const baseTag = `<base href="${baseHref}">`;
-
-  if (/<head[^>]*>/i.test(html)) {
-    return html.replace(/<head[^>]*>/i, (match) => `${match}${baseTag}`);
-  }
-
-  return `${baseTag}${html}`;
-};
-
-const SOLVEAD_RESULT_BRIDGE = `<script id="solvead-result-bridge">(function(){
-  if (window.__solveadBridgeInstalled) return;
-  window.__solveadBridgeInstalled = true;
-
-  var state = { activityId: null, sessionId: null };
-  var lastSent = null;
-  var timer = null;
-
-  function parseFraction(text) {
-    if (!text) return null;
-    var match = text.match(/(\\d+)\\s*\\/\\s*(\\d+)/);
-    if (!match) return null;
-    var score = Number(match[1]);
-    var maxScore = Number(match[2]);
-    if (!Number.isFinite(score) || !Number.isFinite(maxScore) || maxScore <= 0) return null;
-    return { score: score, maxScore: maxScore };
-  }
-
-  function parseCorrectCount(text) {
-    if (!text) return null;
-
-    var patterns = [
-      /(\\d+)\\s*of\\s*(\\d+)\\s*(?:answered\\s*)?correct(?:ly)?/ig,
-      /(\\d+)\\s*\\/\\s*(\\d+)\\s*(?:answered\\s*)?correct(?:ly)?/ig,
-    ];
-
-    var best = null;
-    for (var p = 0; p < patterns.length; p += 1) {
-      var regex = patterns[p];
-      regex.lastIndex = 0;
-      var match;
-      while ((match = regex.exec(text)) !== null) {
-        var score = Number(match[1]);
-        var maxScore = Number(match[2]);
-        if (!Number.isFinite(score) || !Number.isFinite(maxScore) || maxScore <= 0) {
-          continue;
-        }
-
-        best = { score: score, maxScore: maxScore, at: match.index };
-      }
-    }
-
-    if (!best) {
-      return null;
-    }
-
-    return { score: best.score, maxScore: best.maxScore };
-  }
-
-  function parseStars(text) {
-    if (!text) return 0;
-    var starsWord = text.match(/(\\d+)\\s*(?:star|stars)\\b/i);
-    if (starsWord) {
-      var parsed = Number(starsWord[1]);
-      if (Number.isFinite(parsed)) return parsed;
-    }
-
-    var starGlyphs = (text.match(/⭐|\\u2b50/g) || []).length;
-    return starGlyphs;
-  }
-
-  function extractResult() {
-    if (!document || !document.body) return null;
-
-    var fullText = document.body.innerText || '';
-    var correctCount = parseCorrectCount(fullText);
-    if (correctCount) {
-      return {
-        score: correctCount.score,
-        maxScore: correctCount.maxScore,
-        stars: parseStars(fullText),
-      };
-    }
-
-    var candidates = [];
-    var scoreNodes = document.querySelectorAll('[id*=\\"score\\" i], [class*=\\"score\\" i], [aria-label*=\\"score\\" i], [data-score]');
-    for (var i = 0; i < scoreNodes.length; i += 1) {
-      var node = scoreNodes[i];
-      var nodeText = node.textContent || '';
-      candidates.push(nodeText);
-
-      var nodeCorrectCount = parseCorrectCount(nodeText);
-      if (nodeCorrectCount) {
-        return {
-          score: nodeCorrectCount.score,
-          maxScore: nodeCorrectCount.maxScore,
-          stars: parseStars(fullText),
-        };
-      }
-
-      var dataScore = node.getAttribute('data-score');
-      var dataMax = node.getAttribute('data-max-score');
-      if (dataScore && dataMax) {
-        var score = Number(dataScore);
-        var maxScore = Number(dataMax);
-        if (Number.isFinite(score) && Number.isFinite(maxScore) && maxScore > 0) {
-          return {
-            score: score,
-            maxScore: maxScore,
-            stars: parseStars(fullText),
-          };
-        }
-      }
-    }
-
-    candidates.push(fullText);
-
-    for (var j = 0; j < candidates.length; j += 1) {
-      var fraction = parseFraction(candidates[j]);
-      if (fraction) {
-        return {
-          score: fraction.score,
-          maxScore: fraction.maxScore,
-          stars: parseStars(candidates[j] + ' ' + (document.body.innerText || '')),
-        };
-      }
-    }
-
-    return null;
-  }
-
-  function sendResult() {
-    if (!state.activityId) return;
-    var snapshot = extractResult();
-    if (!snapshot) return;
-
-    var payload = {
-      type: 'solvead:activity-result',
-      activity_id: state.activityId,
-      session_id: state.sessionId,
-      score: Math.round(snapshot.score),
-      max_score: Math.round(snapshot.maxScore),
-      points: Math.round(snapshot.score),
-      stars: Math.max(0, Math.min(5, Math.round(snapshot.stars || 0))),
-      passed: snapshot.maxScore > 0 && snapshot.score >= snapshot.maxScore * 0.7,
-    };
-
-    var serialized = JSON.stringify(payload);
-    if (serialized === lastSent) return;
-    lastSent = serialized;
-    window.parent.postMessage(payload, '*');
-  }
-
-  function scheduleSend() {
-    if (timer) return;
-    timer = window.setTimeout(function() {
-      timer = null;
-      sendResult();
-    }, 450);
-  }
-
-  window.addEventListener('message', function(event) {
-    var data = event && event.data;
-    if (!data || typeof data !== 'object') return;
-    if (data.type === 'solvead:session') {
-      if (typeof data.activityId === 'string' && data.activityId.trim()) state.activityId = data.activityId.trim();
-      if (typeof data.sessionId === 'string' && data.sessionId.trim()) state.sessionId = data.sessionId.trim();
-      scheduleSend();
-    }
-    if (data.type === 'solvead:request-result') {
-      scheduleSend();
-    }
-  });
-
-  var observer = new MutationObserver(function() {
-    scheduleSend();
-  });
-
-  if (document.documentElement) {
-    observer.observe(document.documentElement, { subtree: true, childList: true, characterData: true });
-  }
-
-  window.addEventListener('beforeunload', sendResult);
-  document.addEventListener('visibilitychange', function() {
-    if (document.visibilityState === 'hidden') sendResult();
-  });
-})();</script>`;
-
-const injectSolveadBridge = (html: string) => {
-  if (html.includes("solvead-result-bridge")) {
-    return html;
-  }
-
-  if (/<head[^>]*>/i.test(html)) {
-    return html.replace(/<head[^>]*>/i, (match) => `${match}${SOLVEAD_RESULT_BRIDGE}`);
-  }
-
-  return `${SOLVEAD_RESULT_BRIDGE}${html}`;
-};
-
-const GAME_RESULT_TYPES = new Set(["solvead:activity-result", "solvead.activity.result"]);
+const H5P_XAPI_VERB_PASSED = "http://adlnet.gov/expapi/verbs/passed";
+const H5P_XAPI_VERB_FAILED = "http://adlnet.gov/expapi/verbs/failed";
+const H5P_XAPI_VERB_COMPLETED = "http://adlnet.gov/expapi/verbs/completed";
+const H5P_XAPI_VERB_ANSWERED = "http://adlnet.gov/expapi/verbs/answered";
 
 const toFiniteNumber = (value: unknown) => {
-  const parsed = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 };
 
 const toOptionalString = (value: unknown) => {
-  if (typeof value !== "string") {
-    return null;
-  }
-
+  if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
 };
 
-const parseGameResult = (raw: unknown): ActivityGameResult | null => {
-  if (!raw || typeof raw !== "object") {
-    return null;
-  }
+const extractXapiScore = (statement: Record<string, unknown>) => {
+  const result = (statement.result as Record<string, unknown> | undefined) ?? undefined;
+  if (!result) return null;
 
+  const score = result.score as Record<string, unknown> | undefined;
+  const raw = score ? toFiniteNumber(score.raw) : null;
+  const max = score ? toFiniteNumber(score.max) : null;
+  const scaled = score ? toFiniteNumber(score.scaled) : null;
+
+  if (raw !== null && max !== null && max > 0) {
+    return { score: raw, maxScore: max };
+  }
+  if (scaled !== null) {
+    const impliedMax = 1;
+    return { score: Math.round(scaled * impliedMax), maxScore: impliedMax };
+  }
+  return null;
+};
+
+const findContextActivityId = (statement: Record<string, unknown>) => {
+  const context = statement.context as Record<string, unknown> | undefined;
+  if (!context) return null;
+  const contextActivities = context.contextActivities as Record<string, unknown> | undefined;
+  if (!contextActivities) return null;
+  const groups = [
+    contextActivities.parent,
+    contextActivities.grouping,
+    contextActivities.category,
+    contextActivities.other,
+  ];
+  for (const group of groups) {
+    if (!Array.isArray(group) || group.length === 0) continue;
+    const first = group[0] as Record<string, unknown> | undefined;
+    const id = first ? toOptionalString(first.id) : null;
+    if (id) return id;
+  }
+  return null;
+};
+
+const parseXapiStatement = (
+  payload: unknown,
+): { activityId: string | null; score: number; maxScore: number; passed: boolean; terminal: boolean } | null => {
+  if (!payload || typeof payload !== "object") return null;
+  const obj = payload as Record<string, unknown>;
+  const statement = (obj.statement as Record<string, unknown> | undefined) ?? obj;
+  if (!statement || typeof statement !== "object") return null;
+  if (!statement.verb || typeof statement.verb !== "object") return null;
+
+  const verb = statement.verb as Record<string, unknown>;
+  const verbId = toOptionalString(verb.id) ?? "";
+  if (!verbId) return null;
+
+  const isTerminal = [
+    H5P_XAPI_VERB_PASSED,
+    H5P_XAPI_VERB_FAILED,
+    H5P_XAPI_VERB_COMPLETED,
+    H5P_XAPI_VERB_ANSWERED,
+  ].some((candidate) => verbId === candidate);
+
+  const scored = extractXapiScore(statement);
+  if (!scored) return null;
+
+  const result = statement.result as Record<string, unknown> | undefined;
+  const success = result ? result.success : undefined;
+  const completion = result ? result.completion : undefined;
+
+  const passed =
+    typeof success === "boolean"
+      ? success
+      : verbId === H5P_XAPI_VERB_PASSED ||
+        verbId === H5P_XAPI_VERB_COMPLETED ||
+        (typeof completion === "boolean" && completion);
+
+  return {
+    activityId: findContextActivityId(statement),
+    score: scored.score,
+    maxScore: scored.maxScore,
+    passed,
+    terminal: isTerminal,
+  };
+};
+
+const parseSolveadResult = (raw: unknown): ActivityGameResult | null => {
+  if (!raw || typeof raw !== "object") return null;
   const payload = raw as Record<string, unknown>;
   const typeValue = toOptionalString(payload.type);
-
-  if (!typeValue || !GAME_RESULT_TYPES.has(typeValue)) {
-    return null;
-  }
+  if (!typeValue || !SOLVEAD_RESULT_TYPES.has(typeValue)) return null;
 
   const activityId =
     toOptionalString(payload.activity_id) ??
     toOptionalString(payload.activityId) ??
     toOptionalString(payload.activity);
-  if (!activityId) {
-    return null;
-  }
+  if (!activityId) return null;
 
   const score = toFiniteNumber(payload.score);
   const maxScore = toFiniteNumber(payload.max_score ?? payload.maxScore);
   const points = toFiniteNumber(payload.points ?? score);
-
-  if (score === null || maxScore === null || points === null) {
-    return null;
-  }
+  if (score === null || maxScore === null || points === null) return null;
 
   const stars = toFiniteNumber(payload.stars) ?? 0;
   const passedValue = payload.passed;
-  const passed = typeof passedValue === "boolean" ? passedValue : maxScore > 0 && score >= maxScore * 0.7;
+  const passed =
+    typeof passedValue === "boolean"
+      ? passedValue
+      : maxScore > 0 && score >= maxScore * 0.7;
   const sessionId = toOptionalString(payload.session_id ?? payload.sessionId) ?? undefined;
 
   return {
@@ -307,110 +167,57 @@ export function HtmlActivityFrame({
   htmlUrl,
   title,
   className,
-  sandbox = "allow-scripts",
+  sandbox = "allow-scripts allow-same-origin",
   expectedActivityId,
   sessionId,
   resultRequestToken,
   onGameResult,
 }: Props) {
-  const [srcDoc, setSrcDoc] = useState<string | null>(null);
-  const [useSrcDoc, setUseSrcDoc] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
-    const trimmed = htmlUrl.trim();
-
-    setUseSrcDoc(false);
-    setSrcDoc(null);
-
-    if (!trimmed) {
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    if (looksLikeHtml(trimmed)) {
-      setUseSrcDoc(true);
-      setSrcDoc(injectSolveadBridge(trimmed));
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    if (!/^https?:\/\//i.test(trimmed)) {
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    const baseHref = getBaseHref(trimmed);
-
-    const loadHtml = async () => {
-      try {
-        const response = await fetch(trimmed, { credentials: "omit" });
-        if (!response.ok) {
-          return;
-        }
-
-        const text = await response.text();
-        if (cancelled || !looksLikeHtml(text)) {
-          return;
-        }
-
-        setSrcDoc(injectSolveadBridge(injectBaseTag(text, baseHref)));
-        setUseSrcDoc(true);
-      } catch {
-        // Fallback to iframe src if fetch fails.
-      }
-    };
-
-    loadHtml();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [htmlUrl]);
-
-  useEffect(() => {
-    if (!onGameResult) {
-      return;
-    }
+    if (!onGameResult) return;
 
     const onMessage = (event: MessageEvent) => {
       const frameWindow = iframeRef.current?.contentWindow;
-      if (!frameWindow || event.source !== frameWindow) {
+      if (!frameWindow || event.source !== frameWindow) return;
+
+      const data = event.data as unknown;
+
+      const solveadResult = parseSolveadResult(data);
+      if (solveadResult) {
+        if (!solveadResult.activityId && expectedActivityId) {
+          solveadResult.activityId = expectedActivityId;
+        }
+        if (expectedActivityId && solveadResult.activityId !== expectedActivityId) return;
+        onGameResult(solveadResult);
         return;
       }
 
-      const parsed = parseGameResult(event.data);
-      if (!parsed) {
-        return;
-      }
+      const xapi = parseXapiStatement(data);
+      if (!xapi || !xapi.terminal) return;
+      if (expectedActivityId && xapi.activityId && xapi.activityId !== expectedActivityId) return;
 
-      if (!parsed.activityId && expectedActivityId) {
-        parsed.activityId = expectedActivityId;
-      }
-
-      if (expectedActivityId && parsed.activityId !== expectedActivityId) {
-        return;
-      }
-
-      onGameResult(parsed);
+      onGameResult({
+        activityId: expectedActivityId ?? xapi.activityId ?? "",
+        score: xapi.score,
+        maxScore: xapi.maxScore,
+        points: xapi.score,
+        stars: xapi.passed ? 3 : 1,
+        passed: xapi.passed,
+        sessionId,
+      });
     };
 
     window.addEventListener("message", onMessage);
     return () => {
       window.removeEventListener("message", onMessage);
     };
-  }, [expectedActivityId, onGameResult]);
+  }, [expectedActivityId, sessionId, onGameResult]);
 
   useEffect(() => {
     const frameWindow = iframeRef.current?.contentWindow;
-    if (!frameWindow || !expectedActivityId) {
-      return;
-    }
-
+    if (!frameWindow || !expectedActivityId) return;
     frameWindow.postMessage(
       {
         type: "solvead:session",
@@ -419,14 +226,11 @@ export function HtmlActivityFrame({
       },
       "*",
     );
-  }, [expectedActivityId, sessionId, srcDoc, useSrcDoc]);
+  }, [expectedActivityId, sessionId]);
 
   const handleFrameLoad = () => {
     const frameWindow = iframeRef.current?.contentWindow;
-    if (!frameWindow || !expectedActivityId) {
-      return;
-    }
-
+    if (!frameWindow || !expectedActivityId) return;
     frameWindow.postMessage(
       {
         type: "solvead:session",
@@ -439,15 +243,9 @@ export function HtmlActivityFrame({
   };
 
   useEffect(() => {
-    if (!resultRequestToken) {
-      return;
-    }
-
+    if (!resultRequestToken) return;
     const frameWindow = iframeRef.current?.contentWindow;
-    if (!frameWindow) {
-      return;
-    }
-
+    if (!frameWindow) return;
     frameWindow.postMessage({ type: "solvead:request-result" }, "*");
   }, [resultRequestToken]);
 
@@ -455,8 +253,7 @@ export function HtmlActivityFrame({
     <iframe
       ref={iframeRef}
       title={title}
-      src={useSrcDoc ? undefined : htmlUrl}
-      srcDoc={useSrcDoc ? srcDoc ?? undefined : undefined}
+      src={htmlUrl}
       className={className}
       sandbox={sandbox}
       onLoad={handleFrameLoad}
