@@ -28,6 +28,7 @@ type LevelPageClientProps = {
   levelNumber: number;
   levelTitle: string;
   lessonCount: number;
+  lessonResourceUrl: string | null;
   activityList: ActivitySummary[];
   copy: Copy;
   backgroundStyle: React.CSSProperties;
@@ -39,6 +40,7 @@ export function LevelPageClient({
   levelNumber,
   levelTitle,
   lessonCount,
+  lessonResourceUrl,
   activityList,
   copy,
   backgroundStyle,
@@ -119,6 +121,7 @@ export function LevelPageClient({
         <LevelEntryCards
           levelNumber={levelNumber}
           lessonCount={lessonCount}
+          lessonResourceUrl={lessonResourceUrl}
           activityList={activityList}
           copy={copy}
         />

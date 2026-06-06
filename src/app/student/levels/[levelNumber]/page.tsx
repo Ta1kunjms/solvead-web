@@ -68,9 +68,10 @@ export default async function StudentLevelEntryPage({ params }: { params: Promis
       .maybeSingle(),
     supabase
       .from("lessons")
-      .select("id, levels!inner(level_number)")
+      .select("id, ppt_url, sort_order, levels!inner(level_number)")
       .eq("levels.level_number", levelNumber)
-      .eq("is_published", true),
+      .eq("is_published", true)
+      .order("sort_order", { ascending: true }),
     supabase
       .from("activities")
       .select("id, title, instructions, html_url, activity_type, levels!inner(level_number)")
@@ -88,7 +89,9 @@ export default async function StudentLevelEntryPage({ params }: { params: Promis
   const isUnlocked = progressRow?.unlocked ?? levelNumber === 1;
   const isApproved = progressRow?.approval_status !== "pending" && progressRow?.approval_status !== "denied";
   const unlocked = isUnlocked && isApproved;
-  const lessonCount = (lessons ?? []).length;
+  const lessonList = (lessons ?? []) as { id: string; ppt_url: string | null }[];
+  const lessonCount = lessonList.length;
+  const lessonResourceUrl = lessonList.find((lesson) => lesson.ppt_url)?.ppt_url ?? null;
   const activityList = (activities ?? []) as ActivitySummary[];
 
   if (!unlocked) {
@@ -112,6 +115,7 @@ export default async function StudentLevelEntryPage({ params }: { params: Promis
       levelNumber={levelNumber}
       levelTitle={levelRow.title}
       lessonCount={lessonCount}
+      lessonResourceUrl={lessonResourceUrl}
       activityList={activityList}
       copy={copy}
       backgroundStyle={backgroundStyle}

@@ -28,6 +28,7 @@ type Copy = {
 type Props = {
   levelNumber: number;
   lessonCount: number;
+  lessonResourceUrl: string | null;
   activityList: ActivitySummary[];
   copy: Copy;
 };
@@ -70,7 +71,7 @@ const createSessionId = () => {
   return `session-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 };
 
-export function LevelEntryCards({ levelNumber, lessonCount, activityList, copy }: Props) {
+export function LevelEntryCards({ levelNumber, lessonCount, lessonResourceUrl, activityList, copy }: Props) {
   const [activeActivity, setActiveActivity] = useState<ActiveActivity | null>(null);
   const [pendingGameResult, setPendingGameResult] = useState<ActivityGameResult | null>(null);
   const [isClosingFromX, setIsClosingFromX] = useState(false);
@@ -202,32 +203,53 @@ export function LevelEntryCards({ levelNumber, lessonCount, activityList, copy }
     }
   };
 
+  const lessonCardContent = (
+    <>
+      <Image
+        src="/assets/lesson-activity/water-border.png"
+        alt="Lesson frame"
+        width={3508}
+        height={2480}
+        className="h-auto w-full drop-shadow-[0_20px_40px_rgba(0,0,0,0.35)] transition-all duration-200 group-hover:drop-shadow-[0_25px_50px_rgba(255,200,100,0.4)]"
+        priority
+      />
+      <div className="pointer-events-none absolute inset-[18%] flex flex-col items-center justify-center text-center">
+        <span className="text-xs uppercase tracking-[0.5em] text-white/90">{copy.levelLesson}</span>
+        <span className="mt-3 text-2xl md:text-3xl tuna-card-title">
+          {copy.levelLessonCardTitle}
+        </span>
+        <span className="mt-2 text-xs text-white/80">
+          {lessonCount} lesson{lessonCount === 1 ? "" : "s"}
+        </span>
+      </div>
+    </>
+  );
+
+  const lessonCardClassName =
+    "group relative mx-auto w-full max-w-[560px] transition-transform duration-200 hover:scale-105 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white/70";
+
   return (
     <>
       <div className="mt-8 grid w-full max-w-6xl gap-6 pb-10 md:mt-14 md:grid-cols-2">
-        <Link
-          href={`/student/levels/${levelNumber}/lesson`}
-          aria-label="Open lesson"
-          className="group relative mx-auto w-full max-w-[560px] transition-transform duration-200 hover:scale-105 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white/70"
-        >
-          <Image
-            src="/assets/lesson-activity/water-border.png"
-            alt="Lesson frame"
-            width={3508}
-            height={2480}
-            className="h-auto w-full drop-shadow-[0_20px_40px_rgba(0,0,0,0.35)] transition-all duration-200 group-hover:drop-shadow-[0_25px_50px_rgba(255,200,100,0.4)]"
-            priority
-          />
-          <div className="pointer-events-none absolute inset-[18%] flex flex-col items-center justify-center text-center">
-            <span className="text-xs uppercase tracking-[0.5em] text-white/90">{copy.levelLesson}</span>
-            <span className="mt-3 text-2xl md:text-3xl tuna-card-title">
-              {copy.levelLessonCardTitle}
-            </span>
-            <span className="mt-2 text-xs text-white/80">
-              {lessonCount} lesson{lessonCount === 1 ? "" : "s"}
-            </span>
-          </div>
-        </Link>
+        {lessonResourceUrl ? (
+          <a
+            href={lessonResourceUrl}
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Open lesson resource"
+            className={lessonCardClassName}
+          >
+            {lessonCardContent}
+          </a>
+        ) : (
+          <Link
+            href={`/student/levels/${levelNumber}/lesson`}
+            aria-label="Open lesson"
+            className={lessonCardClassName}
+          >
+            {lessonCardContent}
+          </Link>
+        )}
 
         {activityCount === 0 ? (
           <Link
