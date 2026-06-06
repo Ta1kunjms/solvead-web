@@ -192,5 +192,28 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
+  // Mark any pending-approval notifications for this student + level as read,
+  // so the teacher's UI badge decrements once they have acted on the request.
+  // We look up the matching level_id (level_progress.level_number -> levels.id) first.
+  try {
+    const { data: levelRow } = await supabase
+      .from("levels")
+      .select("id")
+      .eq("level_number", level_number)
+      .maybeSingle()
+
+    if (levelRow?.id) {
+      await supabase
+        .from("teacher_notifications")
+        .update({ is_read: true })
+        .eq("student_id", studentId)
+        .eq("level_id", levelRow.id)
+        .eq("type", "level_pending_approval")
+        .eq("is_read", false)
+    }
+  } catch (notificationError) {
+    console.error("Failed to mark teacher_notifications as read", notificationError)
+  }
+
   return NextResponse.json({ success: true })
 }

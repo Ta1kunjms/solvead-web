@@ -219,11 +219,17 @@ create table if not exists public.teacher_notifications (
   teacher_id uuid not null references auth.users(id) on delete cascade,
   student_id uuid references auth.users(id) on delete set null,
   level_id uuid references public.levels(id) on delete set null,
-  type text not null check (type in ('unfinished_activity', 'flagged_reflection', 'new_submission')),
+  type text not null check (type in ('unfinished_activity', 'flagged_reflection', 'new_submission', 'level_pending_approval')),
   message text not null,
   is_read boolean not null default false,
   created_at timestamptz not null default now()
 );
+
+create index if not exists teacher_notifications_teacher_unread_idx
+  on public.teacher_notifications (teacher_id, is_read, created_at desc);
+
+create index if not exists teacher_notifications_student_level_idx
+  on public.teacher_notifications (student_id, level_id, is_read);
 
 create table if not exists public.user_preferences (
   user_id uuid primary key references auth.users(id) on delete cascade,
@@ -450,6 +456,46 @@ create trigger auto_enroll_student_to_single_class
 after insert on public.player_profiles
 for each row
 execute function public.auto_enroll_student_to_single_class();
+
+-- Seed level_progress for new students so that Level 1 is unlocked and Levels 2..15 are locked.
+-- Runs server-side as soon as a player_profiles row is created, regardless of how the student signed in.
+create or replace function public.seed_level_progress_for_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.level_progress (user_id, level_number, unlocked, approval_status)
+  values
+    (new.user_id, 1,  true,  'approved'),
+    (new.user_id, 2,  false, 'pending'),
+    (new.user_id, 3,  false, 'pending'),
+    (new.user_id, 4,  false, 'pending'),
+    (new.user_id, 5,  false, 'pending'),
+    (new.user_id, 6,  false, 'pending'),
+    (new.user_id, 7,  false, 'pending'),
+    (new.user_id, 8,  false, 'pending'),
+    (new.user_id, 9,  false, 'pending'),
+    (new.user_id, 10, false, 'pending'),
+    (new.user_id, 11, false, 'pending'),
+    (new.user_id, 12, false, 'pending'),
+    (new.user_id, 13, false, 'pending'),
+    (new.user_id, 14, false, 'pending'),
+    (new.user_id, 15, false, 'pending')
+  on conflict (user_id, level_number) do nothing;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists auto_seed_level_progress on public.player_profiles;
+create trigger auto_seed_level_progress
+after insert on public.player_profiles
+for each row
+execute function public.seed_level_progress_for_new_user();
+
+grant execute on function public.seed_level_progress_for_new_user() to authenticated;
 
 grant execute on function public.is_teacher(uuid) to authenticated;
 grant execute on function public.user_manages_class(uuid, uuid) to authenticated;

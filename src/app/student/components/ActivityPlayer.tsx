@@ -71,6 +71,46 @@ const createSessionId = () => {
   return `session-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 };
 
+const AUTO_CAPTURE_FALLBACK_MESSAGE =
+  "We could not auto-capture a screenshot. Please select one manually.";
+
+const captureElementAsPngFile = async (
+  target: HTMLElement | null,
+  fileName: string,
+): Promise<File | null> => {
+  if (!target) {
+    return null;
+  }
+
+  try {
+    const mod = await import("html2canvas");
+    const html2canvas = mod.default ?? (mod as unknown as { html2canvas?: typeof mod.default }).html2canvas;
+    if (typeof html2canvas !== "function") {
+      return null;
+    }
+
+    const canvas = await html2canvas(target, {
+      backgroundColor: "#0f172a",
+      logging: false,
+      scale: Math.min(2, window.devicePixelRatio || 1),
+      useCORS: true,
+    });
+
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob((result) => resolve(result), "image/png");
+    });
+
+    if (!blob) {
+      return null;
+    }
+
+    return new File([blob], fileName, { type: "image/png", lastModified: Date.now() });
+  } catch (err) {
+    console.error("html2canvas capture failed", err);
+    return null;
+  }
+};
+
 export function LevelEntryCards({ levelNumber, lessonCount, lessonResourceUrl, activityList, copy }: Props) {
   const [activeActivity, setActiveActivity] = useState<ActiveActivity | null>(null);
   const [pendingGameResult, setPendingGameResult] = useState<ActivityGameResult | null>(null);
@@ -79,8 +119,11 @@ export function LevelEntryCards({ levelNumber, lessonCount, lessonResourceUrl, a
   const [resultRequestToken, setResultRequestToken] = useState(0);
   const [attemptError, setAttemptError] = useState<string | null>(null);
   const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
+  const [screenshotPreviewUrl, setScreenshotPreviewUrl] = useState<string | null>(null);
+  const [isCapturingScreenshot, setIsCapturingScreenshot] = useState(false);
   const titleId = useId();
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const activityContentRef = useRef<HTMLDivElement | null>(null);
   const submittedSessions = useRef<Set<string>>(new Set());
   const pendingGameResultRef = useRef<ActivityGameResult | null>(null);
 
@@ -126,10 +169,15 @@ export function LevelEntryCards({ levelNumber, lessonCount, lessonResourceUrl, a
   const activityCount = activityCards.length;
 
   const closeWithoutFetch = () => {
+    if (screenshotPreviewUrl) {
+      URL.revokeObjectURL(screenshotPreviewUrl);
+    }
     setPendingGameResult(null);
     setActiveActivity(null);
     setAttemptError(null);
     setScreenshotFile(null);
+    setScreenshotPreviewUrl(null);
+    setIsCapturingScreenshot(false);
     setShowScreenshotModal(false);
   };
 
@@ -154,6 +202,27 @@ export function LevelEntryCards({ levelNumber, lessonCount, lessonResourceUrl, a
     }
 
     setShowScreenshotModal(true);
+
+    // Auto-capture a screenshot of the activity area. If html2canvas succeeds the
+    // student can still override the file; if it fails (e.g. cross-origin iframe)
+    // we keep the manual file input active and surface a friendly error.
+    setIsCapturingScreenshot(true);
+    setAttemptError(null);
+    const captured = await captureElementAsPngFile(
+      activityContentRef.current,
+      `activity-${activeActivity.id}-${sessionId}.png`,
+    );
+    setIsCapturingScreenshot(false);
+
+    if (captured) {
+      if (screenshotPreviewUrl) {
+        URL.revokeObjectURL(screenshotPreviewUrl);
+      }
+      setScreenshotFile(captured);
+      setScreenshotPreviewUrl(URL.createObjectURL(captured));
+    } else {
+      setAttemptError(AUTO_CAPTURE_FALLBACK_MESSAGE);
+    }
   };
 
   const handleScreenshotSubmit = async () => {
@@ -347,7 +416,7 @@ export function LevelEntryCards({ levelNumber, lessonCount, lessonResourceUrl, a
               </svg>
             </button>
 
-            <div className="flex-1">
+            <div ref={activityContentRef} className="flex-1">
               {activeActivity.html_url ? (
                   <HtmlActivityFrame
                     htmlUrl={activeActivity.html_url}
@@ -420,19 +489,36 @@ export function LevelEntryCards({ levelNumber, lessonCount, lessonResourceUrl, a
                 <div className="w-full max-w-md rounded-2xl border border-white/20 bg-slate-900/95 p-6 shadow-2xl">
                   <h3 className="text-lg font-semibold text-white">Submit Activity Result</h3>
                   <p className="mt-2 text-sm text-white/70">
-                    Upload a screenshot of your activity result to submit.
+                    {isCapturingScreenshot
+                      ? "Capturing your activity automatically..."
+                      : "A screenshot has been captured. You can replace it before submitting."}
                   </p>
                   <div className="mt-6">
                     <label className="block text-sm font-medium text-teal-100">
                       Screenshot (JPG, PNG, WEBP)
                     </label>
+                    {screenshotPreviewUrl ? (
+                      <div className="mt-2 overflow-hidden rounded-lg border border-white/10 bg-slate-950/60">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={screenshotPreviewUrl}
+                          alt="Auto-captured activity screenshot"
+                          className="block max-h-56 w-full object-contain"
+                        />
+                      </div>
+                    ) : null}
                     <input
                       type="file"
                       accept={SCREENSHOT_ACCEPT}
                       onChange={(event) => {
-                        setScreenshotFile(event.target.files?.[0] ?? null)
+                        const file = event.target.files?.[0] ?? null;
+                        setScreenshotFile(file);
+                        if (screenshotPreviewUrl) {
+                          URL.revokeObjectURL(screenshotPreviewUrl);
+                        }
+                        setScreenshotPreviewUrl(file ? URL.createObjectURL(file) : null);
                         if (attemptError) {
-                          setAttemptError(null)
+                          setAttemptError(null);
                         }
                       }}
                       className="mt-2 block w-full rounded-md border border-white/10 bg-slate-900/80 px-3 py-2 text-sm text-white file:mr-4 file:rounded-md file:border-0 file:bg-teal-400/20 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-teal-100"
@@ -462,7 +548,7 @@ export function LevelEntryCards({ levelNumber, lessonCount, lessonResourceUrl, a
                       onClick={() => {
                         void handleScreenshotSubmit()
                       }}
-                      disabled={isClosingFromX || !screenshotFile}
+                      disabled={isClosingFromX || !screenshotFile || isCapturingScreenshot}
                       className="flex-1 rounded-lg bg-teal-500 px-4 py-2 text-sm font-semibold text-white transition hover:scale-105 hover:bg-teal-600 active:scale-95 disabled:opacity-60"
                     >
                       {isClosingFromX ? "Submitting..." : "Submit"}
@@ -484,10 +570,21 @@ export function ActivityPlayer({ activityId, items, onSubmitComplete }: Activity
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [result, setResult] = useState<SubmitResult | null>(null);
   const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
+  const [screenshotPreviewUrl, setScreenshotPreviewUrl] = useState<string | null>(null);
+  const [isCapturingScreenshot, setIsCapturingScreenshot] = useState(false);
+  const formRef = useRef<HTMLFormElement | null>(null);
 
   const requiredMissing = items.filter(
     (item) => item.is_required && !(responses[item.id]?.trim()),
   );
+
+  useEffect(() => {
+    return () => {
+      if (screenshotPreviewUrl) {
+        URL.revokeObjectURL(screenshotPreviewUrl);
+      }
+    };
+  }, [screenshotPreviewUrl]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -510,13 +607,34 @@ export function ActivityPlayer({ activityId, items, onSubmitComplete }: Activity
       return;
     }
 
-    const screenshotValidation = await validateScreenshotFile(screenshotFile);
+    // Auto-capture the quiz area if the student has not yet attached a file.
+    let screenshotToUpload: File | null = screenshotFile;
+    if (!screenshotToUpload) {
+      setIsCapturingScreenshot(true);
+      const captured = await captureElementAsPngFile(
+        formRef.current,
+        `activity-${activityId}-quiz.png`,
+      );
+      setIsCapturingScreenshot(false);
+      if (captured) {
+        if (screenshotPreviewUrl) {
+          URL.revokeObjectURL(screenshotPreviewUrl);
+        }
+        screenshotToUpload = captured;
+        setScreenshotFile(captured);
+        setScreenshotPreviewUrl(URL.createObjectURL(captured));
+      } else {
+        setSubmitError(AUTO_CAPTURE_FALLBACK_MESSAGE);
+        return;
+      }
+    }
+
+    const screenshotValidation = await validateScreenshotFile(screenshotToUpload);
     if ("error" in screenshotValidation) {
       setSubmitError(screenshotValidation.error);
       return;
     }
 
-    const screenshotToUpload = screenshotFile;
     if (!screenshotToUpload) {
       setSubmitError("Screenshot is required");
       return;
@@ -565,6 +683,7 @@ export function ActivityPlayer({ activityId, items, onSubmitComplete }: Activity
 
   return (
     <form
+      ref={formRef}
       onSubmit={handleSubmit}
       className="rounded-xl border border-teal-300/30 bg-slate-900/70 p-4"
     >
@@ -679,8 +798,18 @@ export function ActivityPlayer({ activityId, items, onSubmitComplete }: Activity
           Upload screenshot
         </label>
         <p className="mt-1 text-xs text-white/70">
-          Required for submission. Accepts JPG, PNG, or WEBP files up to {Math.round(MAX_SCREENSHOT_SIZE_BYTES / (1024 * 1024))}MB.
+          We auto-capture this activity when you submit. You can override by uploading a JPG, PNG, or WEBP file up to {Math.round(MAX_SCREENSHOT_SIZE_BYTES / (1024 * 1024))}MB.
         </p>
+        {screenshotPreviewUrl ? (
+          <div className="mt-3 overflow-hidden rounded-lg border border-white/10 bg-slate-950/60">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={screenshotPreviewUrl}
+              alt="Auto-captured activity screenshot"
+              className="block max-h-56 w-full object-contain"
+            />
+          </div>
+        ) : null}
         <input
           id={`screenshot-${activityId}`}
           type="file"
@@ -688,6 +817,10 @@ export function ActivityPlayer({ activityId, items, onSubmitComplete }: Activity
           onChange={(event) => {
             const file = event.target.files?.[0] ?? null;
             setScreenshotFile(file);
+            if (screenshotPreviewUrl) {
+              URL.revokeObjectURL(screenshotPreviewUrl);
+            }
+            setScreenshotPreviewUrl(file ? URL.createObjectURL(file) : null);
             if (submitError) {
               setSubmitError(null);
             }
@@ -711,10 +844,10 @@ export function ActivityPlayer({ activityId, items, onSubmitComplete }: Activity
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <button
           type="submit"
-          disabled={isSubmitting}
+          disabled={isSubmitting || isCapturingScreenshot}
           className="rounded-lg border border-teal-300/40 bg-teal-400/10 px-4 py-2 text-sm font-semibold text-teal-100 transition hover:bg-teal-400/20 disabled:opacity-60"
         >
-          {isSubmitting ? "Submitting..." : "Submit Activity"}
+          {isCapturingScreenshot ? "Capturing..." : isSubmitting ? "Submitting..." : "Submit Activity"}
         </button>
         {requiredMissing.length > 0 ? (
           <span className="text-xs text-teal-200">

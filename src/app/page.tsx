@@ -224,6 +224,7 @@ export default function Home() {
   const [selectedProfileIcon, setSelectedProfileIcon] = useState<string | null>(null);
   const [activeLevel, setActiveLevel] = useState(1);
   const [levelProgress, setLevelProgress] = useState<Map<number, ProgressRecord>>(new Map());
+  const [unlockedCelebration, setUnlockedCelebration] = useState<{ level: number; expiresAt: number } | null>(null);
   const [preferences, setPreferences] = useState<UserPreferences>(DEFAULT_PREFERENCES);
   const [showSettings, setShowSettings] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -636,6 +637,111 @@ export default function Home() {
       void fetchLeaderboard();
     }
   }, [fetchLeaderboard, leaderboardFetched, stage]);
+
+  // Subscribe to level_progress changes for the current student so the level map
+  // updates immediately when a teacher clicks Proceed (no manual reload needed).
+  useEffect(() => {
+    if (!supabase) {
+      return;
+    }
+
+    if (stage !== "home") {
+      return;
+    }
+
+    let cancelled = false;
+    let cleanupChannel: (() => void) | null = null;
+
+    void (async () => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = sessionData.session?.user?.id;
+      if (!userId || cancelled) {
+        return;
+      }
+
+      const channel = supabase
+        .channel(`student-level-progress-${userId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "level_progress",
+            filter: `user_id=eq.${userId}`,
+          },
+          (payload) => {
+            const row = (payload.new ?? {}) as {
+              level_number?: number;
+              unlocked?: boolean;
+              completed?: boolean;
+              approval_status?: string | null;
+            };
+            const levelNumber = typeof row.level_number === "number" ? row.level_number : null;
+            if (levelNumber === null) {
+              return;
+            }
+
+            let didJustUnlock = false;
+
+            setLevelProgress((previous) => {
+              const next = new Map(previous);
+              const existing = next.get(levelNumber);
+              const updated: ProgressRecord = {
+                level_number: levelNumber,
+                unlocked: typeof row.unlocked === "boolean" ? row.unlocked : existing?.unlocked ?? false,
+                completed: typeof row.completed === "boolean" ? row.completed : existing?.completed ?? false,
+                approval_status:
+                  typeof row.approval_status === "string" || row.approval_status === null
+                    ? row.approval_status
+                    : existing?.approval_status ?? null,
+              };
+              const wasUnlocked = existing?.unlocked === true;
+              const isUnlockedNow = updated.unlocked === true;
+              didJustUnlock = !wasUnlocked && isUnlockedNow;
+              next.set(levelNumber, updated);
+              return next;
+            });
+
+            if (didJustUnlock && levelNumber > 1) {
+              const expiresAt = Date.now() + 5000;
+              setUnlockedCelebration({ level: levelNumber, expiresAt });
+              setStatus(`Level ${levelNumber} is now unlocked! Open it from the map.`);
+            }
+          },
+        )
+        .subscribe();
+
+      cleanupChannel = () => {
+        void supabase.removeChannel(channel);
+      };
+
+      if (cancelled && cleanupChannel) {
+        cleanupChannel();
+        cleanupChannel = null;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (cleanupChannel) {
+        cleanupChannel();
+        cleanupChannel = null;
+      }
+    };
+  }, [stage, supabase, setStatus]);
+
+  useEffect(() => {
+    if (!unlockedCelebration) {
+      return;
+    }
+    const remaining = unlockedCelebration.expiresAt - Date.now();
+    if (remaining <= 0) {
+      setUnlockedCelebration(null);
+      return;
+    }
+    const timer = window.setTimeout(() => setUnlockedCelebration(null), remaining);
+    return () => window.clearTimeout(timer);
+  }, [unlockedCelebration]);
 
   useEffect(() => {
     if (preferences.volume_level > 0) {
@@ -1342,6 +1448,16 @@ export default function Home() {
         style={{ ...homeBackgroundStyle, filter: `brightness(${brightnessMultiplier})` }}
       />
       <div className="solvead-overlay absolute inset-0" />
+
+      {unlockedCelebration ? (
+        <div
+          className="pointer-events-none absolute left-1/2 top-6 z-40 -translate-x-1/2 rounded-full border-2 border-amber-300 bg-emerald-500/95 px-5 py-2 text-sm font-black text-white shadow-lg"
+          role="status"
+          aria-live="polite"
+        >
+          Level {unlockedCelebration.level} is now unlocked!
+        </div>
+      ) : null}
 
       <div className="absolute inset-0 z-10">
         {LEVEL_POSITIONS.map((position) => {

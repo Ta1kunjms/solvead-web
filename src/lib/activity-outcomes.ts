@@ -138,4 +138,64 @@ export async function applyPassedActivityOutcome({
           : `Completed Level ${resolvedLevelData.level_number}`,
     });
   }
+
+  // Notify the student's teacher(s) that the level is now awaiting approval.
+  // Skip if the level was already approved (i.e. a re-submission of an approved level),
+  // so we don't spam teachers with duplicate notifications.
+  if (!wasApproved) {
+    try {
+      const { data: classRows } = await supabase
+        .from("class_students")
+        .select("classes(teacher_id)")
+        .eq("student_id", userId)
+        .eq("is_active", true);
+
+      const teacherIds = new Set<string>();
+      for (const row of classRows ?? []) {
+        const classRef = (row as { classes?: { teacher_id?: string } | { teacher_id?: string }[] | null })
+          .classes;
+        const teacherId = Array.isArray(classRef) ? classRef[0]?.teacher_id : classRef?.teacher_id;
+        if (typeof teacherId === "string" && teacherId.length > 0) {
+          teacherIds.add(teacherId);
+        }
+      }
+
+      if (teacherIds.size === 0) {
+        return;
+      }
+
+      // Avoid inserting a duplicate unread notification for the same teacher + student + level.
+      const { data: existing } = await supabase
+        .from("teacher_notifications")
+        .select("teacher_id")
+        .eq("student_id", userId)
+        .eq("level_id", levelId)
+        .eq("type", "level_pending_approval")
+        .eq("is_read", false)
+        .in("teacher_id", Array.from(teacherIds));
+
+      const alreadyNotified = new Set<string>(((existing ?? []) as Array<{ teacher_id: string }>).map((row) => row.teacher_id));
+      const freshTeacherIds = Array.from(teacherIds).filter((teacherId) => !alreadyNotified.has(teacherId));
+
+      if (freshTeacherIds.length === 0) {
+        return;
+      }
+
+      const message = `Student completed Level ${resolvedLevelData.level_number} and is awaiting your approval to proceed.`;
+      const notifications = freshTeacherIds.map((teacherId) => ({
+        teacher_id: teacherId,
+        student_id: userId,
+        level_id: levelId,
+        type: "level_pending_approval",
+        message,
+        is_read: false,
+        created_at: now,
+      }));
+
+      await supabase.from("teacher_notifications").insert(notifications);
+    } catch (notificationError) {
+      // Never fail the outcome because the notification could not be created.
+      console.error("Failed to create level_pending_approval notification", notificationError);
+    }
+  }
 }
