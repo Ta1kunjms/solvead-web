@@ -79,7 +79,7 @@ export async function uploadLessonResource(params: {
   const finalizeResponse = await fetch(`/api/teacher/lessons/${lessonId}/resource`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path }),
+    body: JSON.stringify({ path, contentType }),
   });
 
   const finalizeBody = await finalizeResponse.json().catch(() => ({}));
