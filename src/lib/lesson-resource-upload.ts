@@ -86,7 +86,7 @@ export async function uploadToSignedUrl({
   const finalizeResponse = await fetch(finalizeUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path, contentType }),
+    body: JSON.stringify({ path }),
   });
 
   const finalizeBody = (await finalizeResponse.json().catch(() => ({}))) as FinalizeResponse;
@@ -124,19 +124,4 @@ export async function uploadLessonResource(params: {
     onProgress,
   });
   return { path, ppt_url: url };
-}
-
-export async function uploadActivityHtml(params: {
-  activityId: string;
-  file: File;
-  onProgress?: ResourceUploadProgress;
-}): Promise<{ path: string; html_url: string }> {
-  const { activityId, file, onProgress } = params;
-  const { path, url } = await uploadToSignedUrl({
-    signUrl: `/api/teacher/activities/${activityId}/html/upload-url?name=${encodeURIComponent(file.name)}`,
-    finalizeUrl: `/api/teacher/activities/${activityId}/html`,
-    file,
-    onProgress,
-  });
-  return { path, html_url: url };
 }

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
-import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 type Params = {
   lessonId: string;
@@ -91,9 +90,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<P
     return NextResponse.json({ error: "Lesson not found" }, { status: 404 });
   }
 
-  let payload: { path?: unknown; contentType?: unknown } = {};
+  let payload: { path?: unknown } = {};
   try {
-    payload = (await request.json()) as { path?: unknown; contentType?: unknown };
+    payload = (await request.json()) as { path?: unknown };
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
@@ -111,44 +110,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<P
   const extension = getExtension(path);
   if (!ALLOWED_EXTENSIONS.has(extension)) {
     return NextResponse.json({ error: "Unsupported file type" }, { status: 400 });
-  }
-
-  const requestedContentType =
-    typeof payload.contentType === "string" && payload.contentType.trim().length > 0
-      ? payload.contentType.trim()
-      : null;
-
-  if (requestedContentType) {
-    const admin = getSupabaseAdmin();
-    if (admin) {
-      const { data: existing, error: readError } = await admin
-        .from("storage.objects")
-        .select("metadata")
-        .eq("bucket_id", RESOURCE_BUCKET)
-        .eq("name", path)
-        .maybeSingle();
-
-      if (readError) {
-        return NextResponse.json({ error: readError.message }, { status: 500 });
-      }
-
-      const previousMetadata =
-        existing?.metadata && typeof existing.metadata === "object" && !Array.isArray(existing.metadata)
-          ? (existing.metadata as Record<string, unknown>)
-          : {};
-
-      const nextMetadata = { ...previousMetadata, mimetype: requestedContentType };
-
-      const { error: metaError } = await admin
-        .from("storage.objects")
-        .update({ metadata: nextMetadata })
-        .eq("bucket_id", RESOURCE_BUCKET)
-        .eq("name", path);
-
-      if (metaError) {
-        return NextResponse.json({ error: metaError.message }, { status: 500 });
-      }
-    }
   }
 
   const { data: publicUrlData } = supabase.storage.from(RESOURCE_BUCKET).getPublicUrl(path);
