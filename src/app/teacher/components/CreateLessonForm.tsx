@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useState } from "react";
+import { uploadLessonResource } from "@/lib/lesson-resource-upload";
 
 type Props = {
   levelId: string;
@@ -20,12 +21,14 @@ export function CreateLessonForm({ levelId, levelNumber, onClose, onSaved }: Pro
   });
   const [resourceFile, setResourceFile] = useState<File | null>(null);
   const [createdLessonId, setCreatedLessonId] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
       setIsSubmitting(true);
       setError(null);
+      setUploadProgress(0);
 
       try {
         const title = form.title.trim();
@@ -80,17 +83,18 @@ export function CreateLessonForm({ levelId, levelNumber, onClose, onSaved }: Pro
         }
 
         if (resourceFile && lessonId) {
-          const formData = new FormData();
-          formData.append("file", resourceFile);
-
-          const uploadResponse = await fetch(`/api/teacher/lessons/${lessonId}/resource`, {
-            method: "POST",
-            body: formData,
-          });
-
-          const uploadBody = await uploadResponse.json().catch(() => ({}));
-          if (!uploadResponse.ok) {
-            setError(uploadBody.error || `Lesson created but resource upload failed (HTTP ${uploadResponse.status})`);
+          try {
+            await uploadLessonResource({
+              lessonId,
+              file: resourceFile,
+              onProgress: setUploadProgress,
+            });
+          } catch (uploadErr) {
+            setError(
+              uploadErr instanceof Error
+                ? `Lesson created but resource upload failed: ${uploadErr.message}`
+                : "Lesson created but resource upload failed",
+            );
             setIsSubmitting(false);
             return;
           }
@@ -163,12 +167,32 @@ export function CreateLessonForm({ levelId, levelNumber, onClose, onSaved }: Pro
             <input
               type="file"
               accept=".ppt,.pptx,.pdf,.doc,.docx,.xls,.xlsx,.csv,.zip,.h5p,.lumi"
-              onChange={(e) => setResourceFile(e.target.files?.[0] ?? null)}
+              onChange={(e) => {
+                setResourceFile(e.target.files?.[0] ?? null);
+                setUploadProgress(0);
+              }}
               className="teacher-input"
             />
             {resourceFile && (
               <p className="mt-1 text-xs text-slate-500">Selected: {resourceFile.name}</p>
             )}
+            {isSubmitting && uploadProgress > 0 && uploadProgress < 100 ? (
+              <div className="mt-2">
+                <div
+                  className="h-2 w-full overflow-hidden rounded-full bg-slate-200"
+                  role="progressbar"
+                  aria-valuenow={uploadProgress}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                >
+                  <div
+                    className="h-full bg-emerald-500 transition-[width] duration-150"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+                <p className="mt-1 text-xs text-slate-500">Uploading {uploadProgress}%</p>
+              </div>
+            ) : null}
           </div>
 
           {error && <p className="teacher-alert teacher-alert--error">{error}</p>}
@@ -178,7 +202,11 @@ export function CreateLessonForm({ levelId, levelNumber, onClose, onSaved }: Pro
               Cancel
             </button>
             <button type="submit" disabled={isSubmitting} className="teacher-button flex-1 disabled:opacity-50">
-              {isSubmitting ? "Creating..." : "Create Lesson"}
+              {isSubmitting
+                ? uploadProgress > 0 && uploadProgress < 100
+                  ? `Uploading ${uploadProgress}%`
+                  : "Creating..."
+                : "Create Lesson"}
             </button>
           </div>
         </form>

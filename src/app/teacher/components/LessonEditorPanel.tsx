@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { uploadLessonResource } from "@/lib/lesson-resource-upload"
 
 type Lesson = {
   id: string
@@ -36,6 +37,7 @@ export function LessonEditorPanel({ lesson, levelNumber, levelTitle }: Props) {
   const [resourceFile, setResourceFile] = useState<File | null>(null)
   const [isUploadingResource, setIsUploadingResource] = useState(false)
   const [resourceUploadError, setResourceUploadError] = useState<string | null>(null)
+  const [resourceUploadProgress, setResourceUploadProgress] = useState(0)
 
   const saveLesson = async () => {
     setSaving(true)
@@ -97,27 +99,18 @@ export function LessonEditorPanel({ lesson, levelNumber, levelTitle }: Props) {
 
     setIsUploadingResource(true)
     setResourceUploadError(null)
+    setResourceUploadProgress(0)
 
     try {
-      const formData = new FormData()
-      formData.append("file", resourceFile)
-
-      const response = await fetch(`/api/teacher/lessons/${lesson.id}/resource`, {
-        method: "POST",
-        body: formData,
+      const { ppt_url } = await uploadLessonResource({
+        lessonId: lesson.id,
+        file: resourceFile,
+        onProgress: setResourceUploadProgress,
       })
 
-      const body = await response.json().catch(() => ({}))
-
-      if (!response.ok) {
-        setResourceUploadError(body.error || `Upload failed (HTTP ${response.status})`)
-        return
-      }
-
-      const url = body.ppt_url || null
-      setResourceUrl(url)
+      setResourceUrl(ppt_url)
       setResourceFile(null)
-      setForm((current) => ({ ...current, ppt_url: url || "" }))
+      setForm((current) => ({ ...current, ppt_url }))
       router.refresh()
     } catch (err) {
       setResourceUploadError(err instanceof Error ? err.message : "Unknown error")
@@ -246,7 +239,11 @@ export function LessonEditorPanel({ lesson, levelNumber, levelTitle }: Props) {
               <input
                 type="file"
                 accept=".ppt,.pptx,.pdf,.doc,.docx,.xls,.xlsx,.csv,.zip,.h5p,.lumi"
-                onChange={(e) => setResourceFile(e.target.files?.[0] ?? null)}
+                onChange={(e) => {
+                  setResourceFile(e.target.files?.[0] ?? null)
+                  setResourceUploadProgress(0)
+                  setResourceUploadError(null)
+                }}
                 className="teacher-input"
               />
               {resourceFile ? (
@@ -260,7 +257,11 @@ export function LessonEditorPanel({ lesson, levelNumber, levelTitle }: Props) {
                 disabled={isUploadingResource}
                 className="teacher-button disabled:opacity-50"
               >
-                {isUploadingResource ? "Uploading..." : "Upload File"}
+                {isUploadingResource
+                  ? resourceUploadProgress > 0
+                    ? `Uploading ${resourceUploadProgress}%`
+                    : "Uploading..."
+                  : "Upload File"}
               </button>
               <button
                 type="button"
@@ -271,6 +272,22 @@ export function LessonEditorPanel({ lesson, levelNumber, levelTitle }: Props) {
                 Remove
               </button>
             </div>
+            {isUploadingResource && resourceUploadProgress > 0 && resourceUploadProgress < 100 ? (
+              <div className="sm:col-span-2">
+                <div
+                  className="h-2 w-full overflow-hidden rounded-full bg-slate-200"
+                  role="progressbar"
+                  aria-valuenow={resourceUploadProgress}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                >
+                  <div
+                    className="h-full bg-emerald-500 transition-[width] duration-150"
+                    style={{ width: `${resourceUploadProgress}%` }}
+                  />
+                </div>
+              </div>
+            ) : null}
           </div>
           {resourceUploadError && <p className="teacher-alert teacher-alert--error">{resourceUploadError}</p>}
         </div>

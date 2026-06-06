@@ -6,7 +6,6 @@ type Params = {
 };
 
 const RESOURCE_BUCKET = "lesson-resources";
-const MAX_RESOURCE_SIZE = 200_000_000;
 const ALLOWED_EXTENSIONS = new Set([
   ".ppt",
   ".pptx",
@@ -20,6 +19,18 @@ const ALLOWED_EXTENSIONS = new Set([
   ".h5p",
   ".lumi",
 ]);
+
+function getExtension(fileName: string) {
+  const index = fileName.lastIndexOf(".");
+  if (index === -1) {
+    return "";
+  }
+  return fileName.slice(index).toLowerCase();
+}
+
+function expectedResourcePath(lessonId: string) {
+  return `lessons/${lessonId}/resource`;
+}
 
 async function requireTeacher() {
   const supabase = await getSupabaseServerClient();
@@ -62,15 +73,6 @@ async function verifyLessonAccess(
   return Boolean(lesson);
 }
 
-function getExtension(fileName: string) {
-  const index = fileName.lastIndexOf(".");
-  if (index === -1) {
-    return "";
-  }
-
-  return fileName.slice(index).toLowerCase();
-}
-
 export async function POST(request: NextRequest, { params }: { params: Promise<Params> }) {
   const auth = await requireTeacher();
   if (auth.error) {
@@ -88,52 +90,29 @@ export async function POST(request: NextRequest, { params }: { params: Promise<P
     return NextResponse.json({ error: "Lesson not found" }, { status: 404 });
   }
 
-  const formData = await request.formData();
-  const file = formData.get("file");
-
-  if (!file || !(file instanceof File)) {
-    return NextResponse.json({ error: "Resource file is required" }, { status: 400 });
+  let payload: { path?: unknown } = {};
+  try {
+    payload = (await request.json()) as { path?: unknown };
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const extension = getExtension(file.name);
+  const path = typeof payload.path === "string" ? payload.path.trim() : "";
+  if (!path) {
+    return NextResponse.json({ error: "Resource path is required" }, { status: 400 });
+  }
+
+  const expectedPrefix = expectedResourcePath(lessonId);
+  if (!path.startsWith(`${expectedPrefix}.`)) {
+    return NextResponse.json({ error: "Resource path does not match this lesson" }, { status: 400 });
+  }
+
+  const extension = getExtension(path);
   if (!ALLOWED_EXTENSIONS.has(extension)) {
     return NextResponse.json({ error: "Unsupported file type" }, { status: 400 });
   }
 
-  if (file.size === 0) {
-    return NextResponse.json({ error: "Resource file is empty" }, { status: 400 });
-  }
-
-  if (file.size > MAX_RESOURCE_SIZE) {
-    return NextResponse.json({ error: "Resource file exceeds 200MB" }, { status: 400 });
-  }
-
-  const filePath = `lessons/${lessonId}/resource${extension}`;
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const contentType = file.type || "application/octet-stream";
-
-  let uploadResult;
-  try {
-    uploadResult = await supabase.storage
-      .from(RESOURCE_BUCKET)
-      .upload(filePath, buffer, {
-        contentType,
-        cacheControl: "3600",
-        upsert: true,
-      });
-  } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Storage upload failed" },
-      { status: 500 },
-    );
-  }
-
-  const { error: uploadError } = uploadResult;
-  if (uploadError) {
-    return NextResponse.json({ error: uploadError.message }, { status: 500 });
-  }
-
-  const { data: publicUrlData } = supabase.storage.from(RESOURCE_BUCKET).getPublicUrl(filePath);
+  const { data: publicUrlData } = supabase.storage.from(RESOURCE_BUCKET).getPublicUrl(path);
   const resourceUrl = publicUrlData.publicUrl;
 
   const { error: updateError } = await supabase
@@ -145,7 +124,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<P
     return NextResponse.json({ error: updateError.message }, { status: 500 });
   }
 
-  return NextResponse.json({ ppt_url: resourceUrl }, { status: 200 });
+  return NextResponse.json({ ppt_url: resourceUrl, path }, { status: 200 });
 }
 
 export async function DELETE(_request: NextRequest, { params }: { params: Promise<Params> }) {
