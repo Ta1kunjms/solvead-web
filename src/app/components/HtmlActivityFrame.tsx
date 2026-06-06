@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export type ActivityGameResult = {
   activityId: string;
@@ -174,6 +174,10 @@ export function HtmlActivityFrame({
   onGameResult,
 }: Props) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const [cacheBustedUrl] = useState(() => {
+    const separator = htmlUrl.includes("?") ? "&" : "?";
+    return `${htmlUrl}${separator}v=${Date.now()}`;
+  });
 
   useEffect(() => {
     if (!onGameResult) return;
@@ -253,7 +257,7 @@ export function HtmlActivityFrame({
     <iframe
       ref={iframeRef}
       title={title}
-      src={htmlUrl}
+      src={cacheBustedUrl}
       className={className}
       sandbox={sandbox}
       onLoad={handleFrameLoad}

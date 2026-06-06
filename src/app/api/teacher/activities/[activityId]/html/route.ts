@@ -101,7 +101,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<P
     .from(HTML_BUCKET)
     .upload(filePath, fileBuffer, {
       contentType: "text/html; charset=utf-8",
-      cacheControl: "3600",
+      cacheControl: "no-cache",
       upsert: false,
     });
 
