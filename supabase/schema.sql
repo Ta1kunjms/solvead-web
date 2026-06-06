@@ -812,9 +812,11 @@ values
 on conflict do nothing;
 
 -- Storage bucket for activity HTML uploads
-insert into storage.buckets (id, name, public)
-values ('activity-html', 'activity-html', true)
-on conflict (id) do nothing;
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('activity-html', 'activity-html', true, 209715200)
+on conflict (id) do update
+set public = excluded.public,
+    file_size_limit = excluded.file_size_limit;
 
 drop policy if exists "activity_html_public_read" on storage.objects;
 create policy "activity_html_public_read"
@@ -904,9 +906,11 @@ create policy "activity_screenshots_student_delete_own"
   );
 
 -- Storage bucket for lesson resource uploads (PPT, PDFs, etc.)
-insert into storage.buckets (id, name, public)
-values ('lesson-resources', 'lesson-resources', true)
-on conflict (id) do nothing;
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('lesson-resources', 'lesson-resources', true, 209715200)
+on conflict (id) do update
+set public = excluded.public,
+    file_size_limit = excluded.file_size_limit;
 
 drop policy if exists "lesson_resources_public_read" on storage.objects;
 create policy "lesson_resources_public_read"

@@ -48,7 +48,7 @@ export function CreateActivityForm({ levelId, levelNumber, onClose, onSaved }: P
 
           if (!uploadResponse.ok) {
             const body = await uploadResponse.json().catch(() => ({}));
-            setUploadError(body.error || "Failed to upload HTML");
+            setUploadError(body.error || `Upload failed (HTTP ${uploadResponse.status})`);
             setIsSubmitting(false);
             return;
           }
@@ -113,7 +113,7 @@ export function CreateActivityForm({ levelId, levelNumber, onClose, onSaved }: P
 
           if (!uploadResponse.ok) {
             const uploadBody = await uploadResponse.json().catch(() => ({}));
-            setUploadError(uploadBody.error || "Activity created, but HTML upload failed");
+            setUploadError(uploadBody.error || `Activity created, but HTML upload failed (HTTP ${uploadResponse.status})`);
             setCreatedActivityId(newActivityId);
             setIsSubmitting(false);
             return;

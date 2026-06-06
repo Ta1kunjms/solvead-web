@@ -7,7 +7,7 @@ type Params = {
 };
 
 const HTML_BUCKET = "activity-html";
-const MAX_HTML_SIZE = 50_000_000;
+const MAX_HTML_SIZE = 200_000_000;
 
 async function requireTeacher() {
   const supabase = await getSupabaseServerClient();
@@ -152,7 +152,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<P
   }
 
   if (file.size > MAX_HTML_SIZE) {
-    return NextResponse.json({ error: "HTML file exceeds 50MB" }, { status: 400 });
+    return NextResponse.json({ error: "HTML file exceeds 200MB" }, { status: 400 });
   }
 
   const rawHtml = await file.text();
@@ -163,14 +163,23 @@ export async function POST(request: NextRequest, { params }: { params: Promise<P
   }
 
   const filePath = `activities/${activityId}/activity.html`;
-  const { error: uploadError } = await supabase.storage
-    .from(HTML_BUCKET)
-    .upload(filePath, Buffer.from(sanitizedHtml), {
-      contentType: "text/html; charset=utf-8",
-      cacheControl: "3600",
-      upsert: true,
-    });
+  let uploadResult;
+  try {
+    uploadResult = await supabase.storage
+      .from(HTML_BUCKET)
+      .upload(filePath, Buffer.from(sanitizedHtml), {
+        contentType: "text/html; charset=utf-8",
+        cacheControl: "3600",
+        upsert: true,
+      });
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Storage upload failed" },
+      { status: 500 },
+    );
+  }
 
+  const { error: uploadError } = uploadResult;
   if (uploadError) {
     return NextResponse.json({ error: uploadError.message }, { status: 500 });
   }

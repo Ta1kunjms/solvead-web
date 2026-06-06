@@ -110,7 +110,7 @@ export function LessonEditorPanel({ lesson, levelNumber, levelTitle }: Props) {
       const body = await response.json().catch(() => ({}))
 
       if (!response.ok) {
-        setResourceUploadError(body.error || "Failed to upload resource")
+        setResourceUploadError(body.error || `Upload failed (HTTP ${response.status})`)
         return
       }
 

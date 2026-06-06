@@ -90,7 +90,7 @@ export function CreateLessonForm({ levelId, levelNumber, onClose, onSaved }: Pro
 
           const uploadBody = await uploadResponse.json().catch(() => ({}));
           if (!uploadResponse.ok) {
-            setError(uploadBody.error || "Lesson created but resource upload failed");
+            setError(uploadBody.error || `Lesson created but resource upload failed (HTTP ${uploadResponse.status})`);
             setIsSubmitting(false);
             return;
           }

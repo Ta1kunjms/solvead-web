@@ -113,7 +113,7 @@ export function ActivityEditorPanel({ activity, levelNumber, levelTitle }: Props
 
       if (!response.ok) {
         const body = await response.json().catch(() => ({}))
-        setHtmlUploadError(body.error || "Failed to upload HTML")
+        setHtmlUploadError(body.error || `Upload failed (HTTP ${response.status})`)
         return
       }
 

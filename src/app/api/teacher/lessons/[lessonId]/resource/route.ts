@@ -6,7 +6,7 @@ type Params = {
 };
 
 const RESOURCE_BUCKET = "lesson-resources";
-const MAX_RESOURCE_SIZE = 50_000_000;
+const MAX_RESOURCE_SIZE = 200_000_000;
 const ALLOWED_EXTENSIONS = new Set([
   ".ppt",
   ".pptx",
@@ -105,21 +105,30 @@ export async function POST(request: NextRequest, { params }: { params: Promise<P
   }
 
   if (file.size > MAX_RESOURCE_SIZE) {
-    return NextResponse.json({ error: "Resource file exceeds 50MB" }, { status: 400 });
+    return NextResponse.json({ error: "Resource file exceeds 200MB" }, { status: 400 });
   }
 
   const filePath = `lessons/${lessonId}/resource${extension}`;
   const buffer = Buffer.from(await file.arrayBuffer());
   const contentType = file.type || "application/octet-stream";
 
-  const { error: uploadError } = await supabase.storage
-    .from(RESOURCE_BUCKET)
-    .upload(filePath, buffer, {
-      contentType,
-      cacheControl: "3600",
-      upsert: true,
-    });
+  let uploadResult;
+  try {
+    uploadResult = await supabase.storage
+      .from(RESOURCE_BUCKET)
+      .upload(filePath, buffer, {
+        contentType,
+        cacheControl: "3600",
+        upsert: true,
+      });
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Storage upload failed" },
+      { status: 500 },
+    );
+  }
 
+  const { error: uploadError } = uploadResult;
   if (uploadError) {
     return NextResponse.json({ error: uploadError.message }, { status: 500 });
   }
