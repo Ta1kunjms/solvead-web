@@ -26,10 +26,8 @@ export function LessonEditorPanel({ lesson, levelNumber, levelTitle }: Props) {
   const [form, setForm] = useState({
     title: lesson.title,
     summary: lesson.summary ?? "",
-    content_markdown: lesson.content_markdown ?? "",
     ppt_url: lesson.ppt_url ?? "",
     is_published: lesson.is_published,
-    sort_order: lesson.sort_order,
   })
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -193,44 +191,22 @@ export function LessonEditorPanel({ lesson, levelNumber, levelTitle }: Props) {
           </div>
 
           <div>
-            <label className="teacher-label">Content Markdown</label>
-            <textarea
-              value={form.content_markdown}
-              onChange={(e) => setForm({ ...form, content_markdown: e.target.value })}
-              className="teacher-textarea"
-              rows={10}
+            <label className="teacher-label">Resource URL</label>
+            <input
+              type="url"
+              value={form.ppt_url}
+              onChange={(e) => {
+                const value = e.target.value
+                setForm({ ...form, ppt_url: value })
+                setResourceUrl(value.trim() ? value : null)
+              }}
+              className="teacher-input"
             />
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <label className="teacher-label">Resource URL</label>
-              <input
-                type="url"
-                value={form.ppt_url}
-                onChange={(e) => {
-                  const value = e.target.value
-                  setForm({ ...form, ppt_url: value })
-                  setResourceUrl(value.trim() ? value : null)
-                }}
-                className="teacher-input"
-              />
-              {resourceUrl ? (
-                <a href={resourceUrl} target="_blank" rel="noreferrer" className="mt-1 inline-flex text-xs text-slate-600 underline">
-                  View current resource
-                </a>
-              ) : null}
-            </div>
-            <div>
-              <label className="teacher-label">Sort Order</label>
-              <input
-                type="number"
-                min="1"
-                value={form.sort_order}
-                onChange={(e) => setForm({ ...form, sort_order: Number(e.target.value) })}
-                className="teacher-input"
-              />
-            </div>
+            {resourceUrl ? (
+              <a href={resourceUrl} target="_blank" rel="noreferrer" className="mt-1 inline-flex text-xs text-slate-600 underline">
+                View current resource
+              </a>
+            ) : null}
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
@@ -307,12 +283,6 @@ export function LessonEditorPanel({ lesson, levelNumber, levelTitle }: Props) {
         <div>
           <p className="teacher-label">Summary</p>
           <p className="mt-1 text-sm text-slate-700 whitespace-pre-wrap">{form.summary || "No summary"}</p>
-        </div>
-        <div>
-          <p className="teacher-label">Content</p>
-          <pre className="mt-1 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 whitespace-pre-wrap">
-            {form.content_markdown || "No content"}
-          </pre>
         </div>
       </article>
     </div>
