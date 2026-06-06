@@ -41,6 +41,7 @@ export default function TeacherContentPage() {
   const [showLessonForm, setShowLessonForm] = useState(false);
   const [showActivityForm, setShowActivityForm] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [levelDrafts, setLevelDrafts] = useState<Record<string, { title?: string; announcement?: string }>>({});
 
   const fetchContent = useCallback(async () => {
     setIsLoading(true);
@@ -74,8 +75,7 @@ export default function TeacherContentPage() {
   }, [fetchContent]);
 
   const selectedLevelData = content.find((c) => c.level.id === selectedLevel);
-  const [editingAnnouncement, setEditingAnnouncement] = useState<string | null>(null);
-  const [editingTitle, setEditingTitle] = useState<string | null>(null);
+  const selectedDraft = selectedLevel ? levelDrafts[selectedLevel] ?? {} : {};
   const levelCount = content.length;
   const levelItems = [...content].sort((a, b) => a.level.level_number - b.level.level_number);
   const levelCountLabel = isLoading
@@ -133,16 +133,32 @@ export default function TeacherContentPage() {
                       <input
                         type="text"
                         className="w-full rounded border px-3 py-2 text-sm mt-1"
-                        value={editingTitle ?? selectedLevelData.level.title}
-                        onChange={(e) => setEditingTitle(e.target.value)}
+                        value={selectedDraft.title ?? selectedLevelData.level.title}
+                        onChange={(e) =>
+                          setLevelDrafts((prev) => ({
+                            ...prev,
+                            [selectedLevelData.level.id]: {
+                              ...(prev[selectedLevelData.level.id] ?? {}),
+                              title: e.target.value,
+                            },
+                          }))
+                        }
                         placeholder="Level title"
                       />
                     </div>
                     <div className="mt-3">
                       <textarea
                         className="w-full rounded border px-3 py-2 text-sm"
-                        value={editingAnnouncement ?? (selectedLevelData.level.announcement ?? "")}
-                        onChange={(e) => setEditingAnnouncement(e.target.value)}
+                        value={selectedDraft.announcement ?? (selectedLevelData.level.announcement ?? "")}
+                        onChange={(e) =>
+                          setLevelDrafts((prev) => ({
+                            ...prev,
+                            [selectedLevelData.level.id]: {
+                              ...(prev[selectedLevelData.level.id] ?? {}),
+                              announcement: e.target.value,
+                            },
+                          }))
+                        }
                         placeholder="Announcement / note / reminder for students"
                         rows={3}
                       />
@@ -155,8 +171,9 @@ export default function TeacherContentPage() {
                     <button
                       onClick={async () => {
                         const id = selectedLevelData.level.id;
-                        const announcement = editingAnnouncement ?? selectedLevelData.level.announcement ?? "";
-                        const title = editingTitle ?? selectedLevelData.level.title;
+                        const draft = levelDrafts[id] ?? {};
+                        const announcement = draft.announcement ?? selectedLevelData.level.announcement ?? "";
+                        const title = draft.title ?? selectedLevelData.level.title;
                         try {
                           const res = await fetch(`/api/teacher/levels/${id}`, {
                             method: "PATCH",
@@ -167,8 +184,11 @@ export default function TeacherContentPage() {
                             const errorText = await res.text();
                             throw new Error(errorText);
                           }
-                          setEditingAnnouncement(null);
-                          setEditingTitle(null);
+                          setLevelDrafts((prev) => {
+                            const next = { ...prev };
+                            delete next[id];
+                            return next;
+                          });
                           await fetchContent();
                         } catch (err) {
                           setError(err instanceof Error ? err.message : String(err));

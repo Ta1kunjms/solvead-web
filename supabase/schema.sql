@@ -903,6 +903,44 @@ create policy "activity_screenshots_student_delete_own"
     and name like auth.uid() || '/%'
   );
 
+-- Storage bucket for lesson resource uploads (PPT, PDFs, etc.)
+insert into storage.buckets (id, name, public)
+values ('lesson-resources', 'lesson-resources', true)
+on conflict (id) do nothing;
+
+drop policy if exists "lesson_resources_public_read" on storage.objects;
+create policy "lesson_resources_public_read"
+  on storage.objects
+  for select
+  using (bucket_id = 'lesson-resources');
+
+drop policy if exists "lesson_resources_teacher_insert" on storage.objects;
+create policy "lesson_resources_teacher_insert"
+  on storage.objects
+  for insert
+  with check (
+    bucket_id = 'lesson-resources'
+    and public.is_teacher()
+    and (storage.foldername(name))[1] = 'lessons'
+  );
+
+drop policy if exists "lesson_resources_teacher_update" on storage.objects;
+create policy "lesson_resources_teacher_update"
+  on storage.objects
+  for update
+  using (bucket_id = 'lesson-resources' and public.is_teacher())
+  with check (
+    bucket_id = 'lesson-resources'
+    and public.is_teacher()
+    and (storage.foldername(name))[1] = 'lessons'
+  );
+
+drop policy if exists "lesson_resources_teacher_delete" on storage.objects;
+create policy "lesson_resources_teacher_delete"
+  on storage.objects
+  for delete
+  using (bucket_id = 'lesson-resources' and public.is_teacher());
+
 -- Realtime setup for teacher auto-refresh subscriptions.
 alter table public.activity_attempts replica identity full;
 alter table public.level_progress replica identity full;
