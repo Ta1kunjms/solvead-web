@@ -106,41 +106,15 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<P
 
   const htmlContent = await fileData.text();
 
-  // H5P XAPI forwarder - simple script injection without complex encoding
-  const xapiForwarder = `<script>
-(function(){
-  function forwardMessage(e){
-    window.parent.postMessage(JSON.parse(JSON.stringify(e)),"*");
-  }
-  function checkH5P(){
-    if(window.H5P&&window.H5P.externalDispatcher){
-      window.H5P.externalDispatcher.on("xAPI",forwardMessage);
-      return true;
-    }
-    return false;
-  }
-  document.addEventListener("DOMContentLoaded",function(){
-    setTimeout(checkH5P,1000);
-  });
-  setInterval(checkH5P,500);
-  window.addEventListener("message",function(e){
-    if(e.data&&e.data.context==="h5p"){
-      window.parent.postMessage({context:"h5p",action:"ready"},"*");
-    }
-  });
-})();
-</script>`;
-
-  let modifiedHtml = htmlContent;
-  if (htmlContent.includes("</head>")) {
-    modifiedHtml = htmlContent.replace("</head>", xapiForwarder + "\n</head>");
-  } else if (htmlContent.includes("</body>")) {
-    modifiedHtml = htmlContent.replace("</body>", xapiForwarder + "\n</body>");
-  } else {
-    modifiedHtml = xapiForwarder + "\n" + htmlContent;
-  }
-
-  const response = new NextResponse(modifiedHtml, {
+  // Serve the activity HTML exactly as uploaded. Do NOT inject scripts via
+  // string replace: H5P core JavaScript embeds literal HTML markup (including
+  // "</head>") inside its own `document.write(...)` calls, and a naive
+  // String.replace would inject our script tag INTO that JS string. The
+  // resulting unbalanced `</script>` causes the browser to close the script
+  // block early and render the rest of the H5P bundle as plain text. The
+  // parent page captures xAPI events via direct contentWindow access on the
+  // iframe (allow-same-origin) instead — see HtmlActivityFrame.tsx.
+  const response = new NextResponse(htmlContent, {
     status: 200,
     headers: {
       "Content-Type": "text/html; charset=utf-8",

@@ -170,6 +170,18 @@ const parseSolveadResult = (raw: unknown): ActivityGameResult | null => {
   };
 };
 
+type H5PExternalDispatcher = {
+  on: (event: string, handler: (event: unknown) => void) => void;
+  off?: (event: string, handler: (event: unknown) => void) => void;
+};
+
+type H5PFrameWindow = Window & {
+  H5P?: {
+    externalDispatcher?: H5PExternalDispatcher;
+    instances?: Array<{ getXAPIData?: () => unknown }>;
+  };
+};
+
 export function HtmlActivityFrame({
   htmlUrl,
   activityId,
@@ -183,6 +195,21 @@ export function HtmlActivityFrame({
 }: Props) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const resolvedActivityId = expectedActivityId ?? activityId;
+  const onGameResultRef = useRef(onGameResult);
+  const sessionIdRef = useRef(sessionId);
+  const resolvedActivityIdRef = useRef(resolvedActivityId);
+
+  useEffect(() => {
+    onGameResultRef.current = onGameResult;
+  }, [onGameResult]);
+
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
+
+  useEffect(() => {
+    resolvedActivityIdRef.current = resolvedActivityId;
+  }, [resolvedActivityId]);
 
   const getIframeSrc = () => {
     if (activityId) {
@@ -198,40 +225,99 @@ export function HtmlActivityFrame({
   useEffect(() => {
     if (!onGameResult) return;
 
+    const handleXapiEvent = (event: unknown) => {
+      // H5P xAPI events arrive as { data: { statement: {...} } } or raw statement
+      const candidate =
+        event && typeof event === "object" && "data" in (event as Record<string, unknown>)
+          ? (event as { data?: { statement?: unknown } }).data?.statement ?? event
+          : event;
+
+      const xapi = parseXapiStatement(candidate);
+      if (!xapi) return;
+
+      const currentResolved = resolvedActivityIdRef.current;
+      if (currentResolved && xapi.activityId && xapi.activityId !== currentResolved) return;
+
+      onGameResultRef.current?.({
+        activityId: currentResolved ?? xapi.activityId ?? "",
+        score: xapi.score,
+        maxScore: xapi.maxScore,
+        points: xapi.score,
+        stars: xapi.passed ? 3 : 1,
+        passed: xapi.passed,
+        sessionId: sessionIdRef.current,
+      });
+    };
+
+    let pollInterval: ReturnType<typeof setInterval> | null = null;
+    let attachedDispatcher: H5PExternalDispatcher | null = null;
+
+    const tryAttachH5P = (): boolean => {
+      const frameWindow = iframeRef.current?.contentWindow as H5PFrameWindow | null;
+      if (!frameWindow) return false;
+
+      try {
+        const dispatcher = frameWindow.H5P?.externalDispatcher;
+        if (!dispatcher || dispatcher === attachedDispatcher) return Boolean(attachedDispatcher);
+
+        dispatcher.on("xAPI", handleXapiEvent);
+        attachedDispatcher = dispatcher;
+        return true;
+      } catch {
+        // Cross-origin access blocked (shouldn't happen with allow-same-origin
+        // for same-origin content, but bail out gracefully if it does).
+        return false;
+      }
+    };
+
+    pollInterval = setInterval(() => {
+      if (tryAttachH5P() && attachedDispatcher && pollInterval) {
+        // Keep polling lightly in case H5P re-initializes (e.g. content reset),
+        // but slow down dramatically once attached.
+        clearInterval(pollInterval);
+        pollInterval = setInterval(tryAttachH5P, 2000);
+      }
+    }, 250);
+
     const onMessage = (event: MessageEvent) => {
       const frameWindow = iframeRef.current?.contentWindow;
       if (!frameWindow || event.source !== frameWindow) return;
 
       const data = event.data as unknown;
 
-      // Handle H5P handshake - respond to enable XAPI
-      if (data && typeof data === "object" && (data as Record<string, unknown>).context === "h5p") {
-        frameWindow.postMessage({ context: "h5p", action: "ready" }, "*");
-        return;
-      }
-
       const solveadResult = parseSolveadResult(data);
       if (solveadResult) {
-        if (!solveadResult.activityId && resolvedActivityId) {
-          solveadResult.activityId = resolvedActivityId;
+        if (!solveadResult.activityId && resolvedActivityIdRef.current) {
+          solveadResult.activityId = resolvedActivityIdRef.current;
         }
-        if (resolvedActivityId && solveadResult.activityId !== resolvedActivityId) return;
-        onGameResult(solveadResult);
+        if (
+          resolvedActivityIdRef.current &&
+          solveadResult.activityId !== resolvedActivityIdRef.current
+        ) {
+          return;
+        }
+        onGameResultRef.current?.(solveadResult);
         return;
       }
 
       const xapi = parseXapiStatement(data);
       if (xapi) {
-        if (resolvedActivityId && xapi.activityId && xapi.activityId !== resolvedActivityId) return;
+        if (
+          resolvedActivityIdRef.current &&
+          xapi.activityId &&
+          xapi.activityId !== resolvedActivityIdRef.current
+        ) {
+          return;
+        }
 
-        onGameResult({
-          activityId: resolvedActivityId ?? xapi.activityId ?? "",
+        onGameResultRef.current?.({
+          activityId: resolvedActivityIdRef.current ?? xapi.activityId ?? "",
           score: xapi.score,
           maxScore: xapi.maxScore,
           points: xapi.score,
           stars: xapi.passed ? 3 : 1,
           passed: xapi.passed,
-          sessionId,
+          sessionId: sessionIdRef.current,
         });
         return;
       }
@@ -240,8 +326,16 @@ export function HtmlActivityFrame({
     window.addEventListener("message", onMessage);
     return () => {
       window.removeEventListener("message", onMessage);
+      if (pollInterval) clearInterval(pollInterval);
+      if (attachedDispatcher?.off) {
+        try {
+          attachedDispatcher.off("xAPI", handleXapiEvent);
+        } catch {
+          // ignore
+        }
+      }
     };
-  }, [resolvedActivityId, sessionId, onGameResult]);
+  }, [onGameResult]);
 
   useEffect(() => {
     const frameWindow = iframeRef.current?.contentWindow;
