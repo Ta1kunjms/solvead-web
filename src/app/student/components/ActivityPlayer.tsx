@@ -179,16 +179,16 @@ export function LevelEntryCards({ levelNumber, lessonCount, lessonResourceUrl, a
     const latestResult = submissionResultRef.current;
     setIsClosingFromX(true);
 
-    try {
-      const formData = new FormData();
-      formData.append("activity_id", activeActivity.id);
-      formData.append("session_id", sessionId);
-      formData.append("score", String(latestResult?.score ?? 0));
-      formData.append("max_score", String(latestResult?.maxScore ?? 0));
-      formData.append("points", String(latestResult?.points ?? 0));
-      formData.append("stars", String(latestResult?.stars ?? 0));
-      formData.append("passed", String(Boolean(latestResult?.passed)));
-      formData.append("screenshot", screenshotFile);
+try {
+       const formData = new FormData();
+       formData.append("activity_id", activeActivity.id);
+       formData.append("session_id", sessionId);
+       formData.append("score", String(latestResult?.score ?? 0));
+       formData.append("max_score", String(latestResult?.maxScore ?? 0));
+       formData.append("points", String(latestResult?.points ?? 0));
+       formData.append("stars", String(latestResult?.stars ?? 0));
+       formData.append("passed", String(latestResult?.passed ? 1 : 0));
+       formData.append("screenshot", screenshotFile);
 
       const response = await fetch("/api/activities/submit-html-result", {
         method: "POST",

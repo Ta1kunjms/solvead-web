@@ -58,8 +58,9 @@ const extractXapiScore = (statement: Record<string, unknown>) => {
   if (raw !== null && max !== null && max > 0) {
     return { score: raw, maxScore: max };
   }
+  // H5P often uses scaled scores (0-1) with implicit max of 100
   if (scaled !== null) {
-    const impliedMax = 1;
+    const impliedMax = 100;
     return { score: Math.round(scaled * impliedMax), maxScore: impliedMax };
   }
   return null;
@@ -67,21 +68,26 @@ const extractXapiScore = (statement: Record<string, unknown>) => {
 
 const findContextActivityId = (statement: Record<string, unknown>) => {
   const context = statement.context as Record<string, unknown> | undefined;
-  if (!context) return null;
-  const contextActivities = context.contextActivities as Record<string, unknown> | undefined;
-  if (!contextActivities) return null;
-  const groups = [
-    contextActivities.parent,
-    contextActivities.grouping,
-    contextActivities.category,
-    contextActivities.other,
-  ];
-  for (const group of groups) {
-    if (!Array.isArray(group) || group.length === 0) continue;
-    const first = group[0] as Record<string, unknown> | undefined;
-    const id = first ? toOptionalString(first.id) : null;
-    if (id) return id;
+  if (context) {
+    const contextActivities = context.contextActivities as Record<string, unknown> | undefined;
+    if (contextActivities) {
+      const groups = [
+        contextActivities.parent,
+        contextActivities.grouping,
+        contextActivities.category,
+        contextActivities.other,
+      ];
+      for (const group of groups) {
+        if (!Array.isArray(group) || group.length === 0) continue;
+        const first = group[0] as Record<string, unknown> | undefined;
+        const id = first ? toOptionalString(first.id) : null;
+        if (id) return id;
+      }
+    }
   }
+  // Fallback: use statement object id if available
+  const objectId = toOptionalString((statement.object as Record<string, unknown> | undefined)?.id);
+  if (objectId) return objectId;
   return null;
 };
 
@@ -198,6 +204,12 @@ export function HtmlActivityFrame({
 
       const data = event.data as unknown;
 
+      // Handle H5P handshake - respond to enable XAPI
+      if (data && typeof data === "object" && (data as Record<string, unknown>).context === "h5p") {
+        frameWindow.postMessage({ context: "h5p", action: "ready" }, "*");
+        return;
+      }
+
       const solveadResult = parseSolveadResult(data);
       if (solveadResult) {
         if (!solveadResult.activityId && resolvedActivityId) {
@@ -209,18 +221,20 @@ export function HtmlActivityFrame({
       }
 
       const xapi = parseXapiStatement(data);
-      if (!xapi || !xapi.terminal) return;
-      if (resolvedActivityId && xapi.activityId && xapi.activityId !== resolvedActivityId) return;
+      if (xapi) {
+        if (resolvedActivityId && xapi.activityId && xapi.activityId !== resolvedActivityId) return;
 
-      onGameResult({
-        activityId: resolvedActivityId ?? xapi.activityId ?? "",
-        score: xapi.score,
-        maxScore: xapi.maxScore,
-        points: xapi.score,
-        stars: xapi.passed ? 3 : 1,
-        passed: xapi.passed,
-        sessionId,
-      });
+        onGameResult({
+          activityId: resolvedActivityId ?? xapi.activityId ?? "",
+          score: xapi.score,
+          maxScore: xapi.maxScore,
+          points: xapi.score,
+          stars: xapi.passed ? 3 : 1,
+          passed: xapi.passed,
+          sessionId,
+        });
+        return;
+      }
     };
 
     window.addEventListener("message", onMessage);

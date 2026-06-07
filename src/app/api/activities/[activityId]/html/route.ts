@@ -39,11 +39,39 @@ async function verifyActivityAccess(
   return { allowed: false, error: "Activity not found", statusCode: 404 };
 }
 
+const createErrorHtml = (message: string, statusCode: number) => {
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Error</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; background: #f3f4f6; margin: 0; padding: 20px; }
+    .error-container { background: white; border-radius: 8px; padding: 40px; max-width: 500px; margin: 40px auto; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    h1 { color: #dc2626; margin: 0 0 10px 0; }
+    p { color: #6b7280; margin: 0; }
+    .status-code { color: #9ca3af; font-size: 14px; margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <div class="error-container">
+    <h1>Activity Content Unavailable</h1>
+    <p>${message}</p>
+    <div class="status-code">Error ${statusCode}</div>
+  </div>
+</body>
+</html>`;
+};
+
 export async function GET(_request: NextRequest, { params }: { params: Promise<Params> }) {
   const supabase = await getSupabaseServerClient();
 
   if (!supabase) {
-    return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
+    return new NextResponse(createErrorHtml("Supabase is not configured", 500), {
+      status: 500,
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
   }
 
   const { activityId } = await params;
@@ -54,7 +82,10 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<P
 
   const { allowed, error, statusCode } = await verifyActivityAccess(supabase, activityId, user?.id ?? null);
   if (!allowed) {
-    return NextResponse.json({ error }, { status: statusCode ?? 500 });
+    return new NextResponse(createErrorHtml(error, statusCode ?? 500), {
+      status: statusCode ?? 500,
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
   }
 
   const filePath = `activities/${activityId}/activity.html`;
@@ -64,16 +95,58 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<P
     .download(filePath);
 
   if (downloadError || !fileData) {
-    return NextResponse.json({ error: "HTML file not found" }, { status: 404 });
+    return new NextResponse(
+      createErrorHtml("The activity content file could not be found or accessed. Please contact your teacher.", 404),
+      {
+        status: 404,
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      }
+    );
   }
 
   const htmlContent = await fileData.text();
 
-  const response = new NextResponse(htmlContent, {
+  // H5P XAPI forwarder - simple script injection without complex encoding
+  const xapiForwarder = `<script>
+(function(){
+  function forwardMessage(e){
+    window.parent.postMessage(JSON.parse(JSON.stringify(e)),"*");
+  }
+  function checkH5P(){
+    if(window.H5P&&window.H5P.externalDispatcher){
+      window.H5P.externalDispatcher.on("xAPI",forwardMessage);
+      return true;
+    }
+    return false;
+  }
+  document.addEventListener("DOMContentLoaded",function(){
+    setTimeout(checkH5P,1000);
+  });
+  setInterval(checkH5P,500);
+  window.addEventListener("message",function(e){
+    if(e.data&&e.data.context==="h5p"){
+      window.parent.postMessage({context:"h5p",action:"ready"},"*");
+    }
+  });
+})();
+</script>`;
+
+  let modifiedHtml = htmlContent;
+  if (htmlContent.includes("</head>")) {
+    modifiedHtml = htmlContent.replace("</head>", xapiForwarder + "\n</head>");
+  } else if (htmlContent.includes("</body>")) {
+    modifiedHtml = htmlContent.replace("</body>", xapiForwarder + "\n</body>");
+  } else {
+    modifiedHtml = xapiForwarder + "\n" + htmlContent;
+  }
+
+  const response = new NextResponse(modifiedHtml, {
     status: 200,
     headers: {
       "Content-Type": "text/html; charset=utf-8",
-      "Cache-Control": "no-cache",
+      "Cache-Control": "no-cache, no-store, must-revalidate",
+      "Pragma": "no-cache",
+      "Expires": "0",
       "X-Frame-Options": "ALLOW-FROM *",
       "Content-Security-Policy": "frame-ancestors *",
     },
