@@ -101,7 +101,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Score values must be non-negative" }, { status: 400 });
   }
 
-  const maxScore = Math.max(1, Math.round(rawMaxScore));
+  if (rawMaxScore <= 0) {
+    return NextResponse.json(
+      { error: "max_score must be a positive number" },
+      { status: 400 },
+    );
+  }
+
+  const maxScore = Math.round(rawMaxScore);
   const score = Math.max(0, Math.min(maxScore, Math.round(rawScore)));
   const points =
     rawPoints === null

@@ -86,7 +86,6 @@ export function LevelEntryCards({ levelNumber, lessonCount, lessonResourceUrl, a
   const activityContentRef = useRef<HTMLDivElement | null>(null);
   const submittedSessions = useRef<Set<string>>(new Set());
   const pendingGameResultRef = useRef<ActivityGameResult | null>(null);
-  const submissionResultRef = useRef<ActivityGameResult | null>(null);
 
   useEffect(() => {
     pendingGameResultRef.current = pendingGameResult;
@@ -139,7 +138,6 @@ export function LevelEntryCards({ levelNumber, lessonCount, lessonResourceUrl, a
     setScreenshotFile(null);
     setScreenshotPreviewUrl(null);
     setShowScreenshotModal(false);
-    submissionResultRef.current = null;
   };
 
   const handleCloseFromButton = async () => {
@@ -148,10 +146,7 @@ export function LevelEntryCards({ levelNumber, lessonCount, lessonResourceUrl, a
     }
 
     const sessionId = activeActivity.sessionId;
-
     const latestResult = pendingGameResultRef.current;
-    submissionResultRef.current = latestResult;
-    const hasResultForActivity = latestResult?.activityId === activeActivity.id;
     const alreadySubmitted = submittedSessions.current.has(sessionId);
 
     if (alreadySubmitted) {
@@ -159,8 +154,13 @@ export function LevelEntryCards({ levelNumber, lessonCount, lessonResourceUrl, a
       return;
     }
 
+    if (!latestResult || latestResult.activityId !== activeActivity.id) {
+      setAttemptError("No game result detected yet. Complete the activity before submitting.");
+    } else {
+      setAttemptError(null);
+    }
+
     setShowScreenshotModal(true);
-    setAttemptError(null);
   };
 
   const handleScreenshotSubmit = async () => {
@@ -176,7 +176,13 @@ export function LevelEntryCards({ levelNumber, lessonCount, lessonResourceUrl, a
     }
 
     const sessionId = activeActivity.sessionId;
-    const latestResult = submissionResultRef.current;
+    const latestResult = pendingGameResultRef.current;
+
+    if (!latestResult || latestResult.activityId !== activeActivity.id) {
+      setAttemptError("No game result detected. Complete the activity before submitting.");
+      return;
+    }
+
     setIsClosingFromX(true);
 
 try {
