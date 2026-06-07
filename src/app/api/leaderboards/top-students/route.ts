@@ -13,7 +13,7 @@ type LeaderboardRow = {
   total_time_seconds: number;
 };
 
-export async function GET() {
+export async function GET(request: Request) {
   const supabase = await getSupabaseServerClient();
   if (!supabase) {
     return NextResponse.json({ error: "Supabase client unavailable." }, { status: 500 });
@@ -27,7 +27,11 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
-  const { data, error } = await supabase.rpc("leaderboard_top_students", { limit_count: 10 });
+  const url = new URL(request.url);
+  const wantAll = url.searchParams.get("all") === "true";
+  const limitCount = wantAll ? 100000 : 10;
+
+  const { data, error } = await supabase.rpc("leaderboard_top_students", { limit_count: limitCount });
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

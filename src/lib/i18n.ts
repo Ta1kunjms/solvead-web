@@ -46,7 +46,12 @@ type CopyKey =
   | "backToLevel"
   | "returnToMap"
   | "openPptResource"
-  | "geometryFocus";
+  | "geometryFocus"
+  | "lrn"
+  | "enterLrn"
+  | "saveLrn"
+  | "lrnSaved"
+  | "lrnAlreadyTaken";
 
 const COPY: Record<AppLanguage, Record<CopyKey, string>> = {
   English: {
@@ -96,6 +101,11 @@ const COPY: Record<AppLanguage, Record<CopyKey, string>> = {
     returnToMap: "Return to Map",
     openPptResource: "Open PPT Resource",
     geometryFocus: "Geometry Focus",
+    lrn: "LRN (Learner Reference Number)",
+    enterLrn: "Enter your LRN",
+    saveLrn: "Save LRN",
+    lrnSaved: "LRN saved.",
+    lrnAlreadyTaken: "That LRN is already used by another account.",
   },
   Filipino: {
     leaderboards: "LEADERBOARDS",
@@ -144,6 +154,11 @@ const COPY: Record<AppLanguage, Record<CopyKey, string>> = {
     returnToMap: "Bumalik sa Mapa",
     openPptResource: "Buksan ang PPT Resource",
     geometryFocus: "Pokos sa Geometry",
+    lrn: "LRN (Learner Reference Number)",
+    enterLrn: "Ilagay ang iyong LRN",
+    saveLrn: "I-save ang LRN",
+    lrnSaved: "Na-save ang LRN.",
+    lrnAlreadyTaken: "Ang LRN na iyon ay ginagamit na ng ibang account.",
   },
 };
 

@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { getCopy } from "@/lib/i18n";
+import { useResponsiveScale } from "@/lib/useResponsiveScale";
 import {
   clampLevel,
   DEFAULT_PREFERENCES,
@@ -230,13 +231,14 @@ export default function Home() {
   const [showHelp, setShowHelp] = useState(false);
   const [showResearchersModal, setShowResearchersModal] = useState(false);
   const [showAboutGame, setShowAboutGame] = useState(false);
+  const [lrnInput, setLrnInput] = useState("");
+  const [isSavingLrn, setIsSavingLrn] = useState(false);
   const [leaderboardRows, setLeaderboardRows] = useState<LeaderboardEntry[]>([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
   const [leaderboardFetched, setLeaderboardFetched] = useState(false);
   const [leaderboardExpanded, setLeaderboardExpanded] = useState(false);
-  const [isMobileViewport, setIsMobileViewport] = useState(false);
-  const [isMobilePortrait, setIsMobilePortrait] = useState(false);
+  const { scale, isMobileViewport, isMobilePortrait } = useResponsiveScale();
 
   const filteredProfileIcons = useMemo(
     () => PROFILE_ICONS.filter((icon) => !selectedGender || icon.gender === selectedGender),
@@ -756,26 +758,6 @@ export default function Home() {
   }, [preferences.sfx_level]);
 
   useEffect(() => {
-    const updateViewport = () => {
-      const touchCapable = window.matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0;
-      const mobileViewport = touchCapable && window.matchMedia("(max-width: 1024px)").matches;
-      const mobilePortrait = touchCapable && window.matchMedia("(max-width: 1024px) and (orientation: portrait)").matches;
-
-      setIsMobileViewport(mobileViewport);
-      setIsMobilePortrait(mobilePortrait);
-    };
-
-    updateViewport();
-    window.addEventListener("resize", updateViewport);
-    window.addEventListener("orientationchange", updateViewport);
-
-    return () => {
-      window.removeEventListener("resize", updateViewport);
-      window.removeEventListener("orientationchange", updateViewport);
-    };
-  }, []);
-
-  useEffect(() => {
     return () => {
       if (sliderSaveTimer.current) {
         clearTimeout(sliderSaveTimer.current);
@@ -998,6 +980,46 @@ export default function Home() {
     setStage("home");
     setStatus("Profile saved. Welcome to SolveAd!");
     setIsLoading(false);
+  };
+
+  const isGoogleUser = user?.app_metadata?.provider === "google";
+
+  const handleSaveLrn = async () => {
+    if (!supabase || !user) {
+      return;
+    }
+
+    const trimmed = lrnInput.trim();
+    if (!trimmed) {
+      setStatus(getCopy(preferences.language).enterLrn);
+      return;
+    }
+
+    setIsSavingLrn(true);
+
+    const { data, error } = await supabase
+      .from("player_profiles")
+      .update({ lrn: trimmed })
+      .eq("user_id", user.id)
+      .select("first_name, last_name, lrn, profile_icon, onboarding_complete")
+      .single();
+
+    if (error) {
+      const copy = getCopy(preferences.language);
+      const isDuplicate =
+        error.code === "23505" ||
+        /duplicate key|unique constraint/i.test(error.message);
+      setStatus(isDuplicate ? copy.lrnAlreadyTaken : `Could not save LRN: ${error.message}`);
+      setIsSavingLrn(false);
+      return;
+    }
+
+    if (data) {
+      setProfile(data as PlayerProfile);
+    }
+    setLrnInput("");
+    setStatus(getCopy(preferences.language).lrnSaved);
+    setIsSavingLrn(false);
   };
 
   const handleGenderSelect = (gender: ProfileGender) => {
@@ -1449,7 +1471,14 @@ export default function Home() {
       />
       <div className="solvead-overlay absolute inset-0" />
 
-      {unlockedCelebration ? (
+      <div
+        className="absolute inset-0"
+        style={isMobileViewport ? {
+          transform: `scale(${scale})`,
+          transformOrigin: "top center",
+        } : undefined}
+      >
+        {unlockedCelebration ? (
         <div
           className="pointer-events-none absolute left-1/2 top-6 z-40 -translate-x-1/2 rounded-full border-2 border-amber-300 bg-emerald-500/95 px-5 py-2 text-sm font-black text-white shadow-lg"
           role="status"
@@ -1510,6 +1539,7 @@ export default function Home() {
             </button>
           );
         })}
+      </div>
       </div>
 
       <div className="pointer-events-none absolute inset-x-2 top-[7.5rem] z-20 flex flex-wrap items-start gap-2 sm:inset-x-4 sm:top-[8rem] sm:gap-3">
@@ -1734,7 +1764,10 @@ export default function Home() {
       </div>
 
       {showSettings && (
-        <div className="panel-card absolute right-4 top-20 z-20 w-[min(94vw,480px)] overflow-hidden border-2 border-[#9e7640]/60 bg-[#e6b17a] p-0 shadow-[0_20px_36px_rgba(77,44,18,0.3)]">
+        <div
+          className="panel-card absolute right-4 top-20 z-20 w-[min(94vw,480px)] overflow-hidden border-2 border-[#9e7640]/60 bg-[#e6b17a] p-0 shadow-[0_20px_36px_rgba(77,44,18,0.3)]"
+          style={isMobileViewport ? { transform: `scale(${scale})`, transformOrigin: "top right" } : undefined}
+        >
           <div className="bg-gradient-to-b from-[#f2c68a] via-[#e6b17a] to-[#dca86c] px-5 py-4">
             <div className="flex items-center justify-between">
               <h3 className="ribbon-title text-2xl text-[#5a3818]">{copy.settings}</h3>
@@ -1756,6 +1789,30 @@ export default function Home() {
                 </div>
                 <span className="ml-3 inline-flex h-7 w-7 items-center justify-center rounded-full border border-[#7c4f20]/60 bg-[#fbe8c3] text-base font-black text-[#6a4019] shadow-[0_4px_8px_rgba(77,44,18,0.2)]">&gt;</span>
               </button>
+
+              {isGoogleUser && !profile?.lrn ? (
+                <div className="rounded-2xl border border-[#a77842]/40 bg-[#f8e3bb]/70 px-4 py-3 shadow-[0_5px_12px_rgba(77,44,18,0.16)]">
+                  <p className="text-base font-black text-[#5a3818]">{copy.lrn}</p>
+                  <div className="mt-2 flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={lrnInput}
+                      onChange={(event) => setLrnInput(event.target.value)}
+                      placeholder={copy.enterLrn}
+                      disabled={isSavingLrn}
+                      className="flex-1 rounded-xl border border-[#cda06c]/50 bg-[#fff3d8] px-3 py-2 text-sm font-bold text-[#4c3112] placeholder:text-[#8a6a3f]/60 focus:outline-none focus:ring-2 focus:ring-[#c48c4b]/40"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void handleSaveLrn()}
+                      disabled={isSavingLrn || !lrnInput.trim()}
+                      className="rounded-xl border-2 border-[#8f5f2a]/70 bg-gradient-to-r from-[#f9e3b8] via-[#f3c97d] to-[#e2a85b] px-3 py-2 text-sm font-black text-[#5a3818] shadow-[0_4px_8px_rgba(77,44,18,0.2)] transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isSavingLrn ? "..." : copy.saveLrn}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="rounded-2xl border border-[#a77842]/40 bg-[#f8e3bb]/70 px-3 py-3 shadow-[0_5px_12px_rgba(77,44,18,0.16)]">
                 <label className="flex w-full items-center gap-3 text-left">
@@ -1852,7 +1909,10 @@ export default function Home() {
       )}
 
       {showHelp && (
-        <div className="panel-card absolute right-4 top-20 z-20 w-[min(92vw,360px)] p-4">
+        <div
+          className="panel-card absolute right-4 top-20 z-20 w-[min(92vw,360px)] p-4"
+          style={isMobileViewport ? { transform: `scale(${scale})`, transformOrigin: "top right" } : undefined}
+        >
           <h3 className="ribbon-title text-lg text-[#543617]">{copy.helpInfo}</h3>
           <div className="mt-3 space-y-3 text-xs font-semibold text-[#5f4426]">
             <div>

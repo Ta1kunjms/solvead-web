@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Image from "next/image";
 
 type LeaderboardRow = {
   rank: number;
@@ -15,19 +14,13 @@ type LeaderboardRow = {
   total_time_seconds: number;
 };
 
-const MEDALS: Record<number, string> = {
-  1: "/assets/misc-buttons/Medal 1 Button.png",
-  2: "/assets/misc-buttons/Medal 2 Button.png",
-  3: "/assets/misc-buttons/Medal 3 Button.png",
-};
-
 export function LeaderboardWidget() {
   const [rows, setRows] = useState<LeaderboardRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/leaderboards/top-students")
+    fetch("/api/leaderboards/top-students?all=true")
       .then((res) => {
         if (!res.ok) throw new Error("Failed to load leaderboard");
         return res.json();
@@ -43,64 +36,50 @@ export function LeaderboardWidget() {
   }, []);
 
   return (
-    <aside className="w-full rounded-2xl border border-[#8a6330]/45 bg-[#f4e1b6]/95 px-4 py-3 shadow-[0_10px_18px_rgba(53,29,7,0.3)]">
-      <div className="flex items-center gap-2 mb-2">
-        <Image src="/assets/misc-buttons/Trophy Button.png" alt="" width={22} height={22} className="h-5 w-5 object-contain" />
-        <h3 className="text-sm font-black text-[#5a3818] sm:text-base">Leaderboard</h3>
+    <aside className="teacher-panel p-5">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-lg font-semibold text-slate-900">Rankings</h2>
+        <span className="teacher-chip">{rows.length} players</span>
       </div>
-      <div className="overflow-hidden rounded-xl border border-[#8d6131]/40 bg-[#d9a55f] px-3 py-2">
-        <p className="mb-2 text-[11px] font-black text-[#5a3818] sm:text-xs">Top 1-10 Players</p>
 
-        {loading && (
-          <div className="space-y-1">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="flex items-center justify-between rounded-lg bg-[#f3d29f]/70 px-2 py-1.5">
-                <div className="flex items-center gap-2">
-                  <div className="h-5 w-5 animate-pulse rounded-full bg-[#c4944a]" />
-                  <div className="h-4 w-24 animate-pulse rounded bg-[#c4944a]" />
-                </div>
-                <div className="h-4 w-10 animate-pulse rounded bg-[#c4944a]" />
+      {loading && (
+        <div className="space-y-2">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2">
+              <div className="flex items-center gap-3">
+                <div className="h-5 w-6 animate-pulse rounded bg-gray-200" />
+                <div className="h-4 w-32 animate-pulse rounded bg-gray-200" />
               </div>
-            ))}
-          </div>
-        )}
+              <div className="h-4 w-12 animate-pulse rounded bg-gray-200" />
+            </div>
+          ))}
+        </div>
+      )}
 
-        {error && <p className="text-sm font-semibold text-[#6b4827]">{error}</p>}
+      {error && <p className="teacher-alert teacher-alert--error">{error}</p>}
 
-        {!loading && !error && rows.length === 0 && (
-          <p className="text-sm font-semibold text-[#6b4827]">No players yet.</p>
-        )}
+      {!loading && !error && rows.length === 0 && (
+        <p className="teacher-helper">No players yet.</p>
+      )}
 
-        {!loading && !error && rows.length > 0 && (
-          <div className="space-y-1">
-            {rows.slice(0, 10).map((row) => {
-              const medalSrc = MEDALS[row.rank];
-              return (
-                <div
-                  key={row.student_id}
-                  className="flex items-center justify-between rounded-lg bg-[#f3d29f]/70 px-2 py-1.5 text-sm font-bold text-[#5a3818] sm:text-base"
-                >
-                  <div className="flex min-w-0 items-center gap-2">
-                    {medalSrc ? (
-                      <Image
-                        src={medalSrc}
-                        alt={`Medal ${row.rank}`}
-                        width={24}
-                        height={24}
-                        className="h-5 w-5 object-contain sm:h-6 sm:w-6"
-                      />
-                    ) : (
-                      <span className="font-black">#{row.rank}</span>
-                    )}
-                    <span className="truncate">{row.student_name}</span>
-                  </div>
-                  <span className="shrink-0">{row.total_points} pts</span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      {!loading && !error && rows.length > 0 && (
+        <div className="max-h-[600px] space-y-1.5 overflow-y-auto pr-1">
+          {rows.map((row) => (
+            <div
+              key={row.student_id}
+              className="flex items-center justify-between rounded-lg border border-gray-100 bg-white px-3 py-2 text-sm transition-colors hover:bg-gray-50"
+            >
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="w-7 shrink-0 text-center font-black text-slate-400 sm:text-base">
+                  #{row.rank}
+                </span>
+                <span className="truncate font-semibold text-slate-900">{row.student_name}</span>
+              </div>
+              <span className="shrink-0 font-bold text-slate-700">{row.total_points} pts</span>
+            </div>
+          ))}
+        </div>
+      )}
     </aside>
   );
 }

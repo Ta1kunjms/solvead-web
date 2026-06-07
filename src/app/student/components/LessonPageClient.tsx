@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useResponsiveScale } from "@/lib/useResponsiveScale";
 
 type LessonPageClientProps = {
   levelNumber: number;
@@ -12,48 +12,12 @@ type LessonPageClientProps = {
 };
 
 export function LessonPageClient({
-  levelNumber,
-  copy,
   baseFontSizeClass,
   brightnessMultiplier,
   darkMode,
   children,
 }: LessonPageClientProps) {
-  const [isMobilePortrait, setIsMobilePortrait] = useState(false);
-
-  useEffect(() => {
-    const checkViewport = () => {
-      const mobileViewport = window.innerWidth < 768;
-      const mobilePortrait = mobileViewport && window.innerHeight > window.innerWidth;
-      setIsMobilePortrait(mobilePortrait);
-    };
-
-    checkViewport();
-    window.addEventListener("resize", checkViewport);
-    window.addEventListener("orientationchange", checkViewport);
-
-    return () => {
-      window.removeEventListener("resize", checkViewport);
-      window.removeEventListener("orientationchange", checkViewport);
-    };
-  }, []);
-
-  if (isMobilePortrait) {
-    return (
-      <main
-        className={`min-h-screen px-4 py-6 text-white flex items-center justify-center ${baseFontSizeClass}`}
-        style={{
-          backgroundColor: darkMode ? "#020617" : "#0f172a",
-          filter: `brightness(${brightnessMultiplier})`,
-        }}
-      >
-        <div className="text-center">
-          <p className="text-sm font-bold text-cyan-300 mb-2">Level {levelNumber} Lesson</p>
-          <p className="text-white/80 text-sm mb-6">Please rotate your device to landscape mode</p>
-        </div>
-      </main>
-    );
-  }
+  const { scale, isMobileViewport } = useResponsiveScale();
 
   return (
     <main
@@ -63,7 +27,20 @@ export function LessonPageClient({
         filter: `brightness(${brightnessMultiplier})`,
       }}
     >
-      {children}
+      {isMobileViewport ? (
+        <div className="mb-4 rounded-full bg-black/70 px-3 py-1 text-[10px] text-white/80 w-fit mx-auto">
+          Rotate to landscape for best experience
+        </div>
+      ) : null}
+
+      <div
+        style={isMobileViewport ? {
+          transform: `scale(${scale})`,
+          transformOrigin: "top center",
+        } : undefined}
+      >
+        {children}
+      </div>
     </main>
   );
 }
