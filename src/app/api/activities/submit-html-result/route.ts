@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: screenshotValidation.error }, { status: 400 });
   }
 
-  if (rawScore < 0 || rawMaxScore <= 0) {
+  if (rawScore < 0) {
     return NextResponse.json({ error: "Score values must be non-negative" }, { status: 400 });
   }
 
