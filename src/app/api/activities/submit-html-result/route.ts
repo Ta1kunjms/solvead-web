@@ -22,16 +22,6 @@ const asFiniteNumber = (value: unknown) => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
-const asBoolean = (value: unknown): boolean | null => {
-  if (typeof value === "boolean") return value;
-  if (typeof value === "string") {
-    const normalized = value.toLowerCase().trim();
-    if (normalized === "true" || normalized === "1") return true;
-    if (normalized === "false" || normalized === "0") return false;
-  }
-  return null;
-};
-
 const asSafeText = (value: unknown) => {
   if (typeof value !== "string") {
     return null;
@@ -85,7 +75,6 @@ export async function POST(request: NextRequest) {
   const rawMaxScore = asFiniteNumber(body.max_score);
   const rawPoints = asFiniteNumber(body.points);
   const stars = Math.max(0, Math.min(5, Math.round(asFiniteNumber(body.stars) ?? 0)));
-  const passedInput = asBoolean(body.passed);
   const screenshot = "screenshot" in body ? body.screenshot : null;
 
   if (!activityId || !sessionId || rawScore === null || rawMaxScore === null) {
@@ -139,7 +128,10 @@ export async function POST(request: NextRequest) {
 
   const scorePct = Math.round((score / maxScore) * 100);
   const passingScore = Number(activity.passing_score ?? 70);
-  const passed = passedInput === null ? scorePct >= passingScore : passedInput;
+  // The score is the source of truth. H5P xAPI "answered" events arrive
+  // without result.success / completion set, so the frontend's passed
+  // inference is unreliable. Always compute passed from scorePct.
+  const passed = scorePct >= passingScore;
 
   const feedbackSummary = [
     `Score: ${scorePct}%. ${passed ? "Level unlock eligible!" : "Try again to improve."}`,
