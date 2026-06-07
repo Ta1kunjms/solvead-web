@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 
 export type ActivityGameResult = {
   activityId: string;
@@ -10,6 +10,10 @@ export type ActivityGameResult = {
   stars: number;
   passed: boolean;
   sessionId?: string;
+};
+
+export type HtmlActivityFrameHandle = {
+  requestLatestResult: () => void;
 };
 
 type Props = {
@@ -182,7 +186,7 @@ type H5PFrameWindow = Window & {
   };
 };
 
-export function HtmlActivityFrame({
+export const HtmlActivityFrame = forwardRef<HtmlActivityFrameHandle, Props>(function HtmlActivityFrame({
   htmlUrl,
   activityId,
   title,
@@ -192,7 +196,7 @@ export function HtmlActivityFrame({
   sessionId,
   resultRequestToken,
   onGameResult,
-}: Props) {
+}, ref) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const resolvedActivityId = expectedActivityId ?? activityId;
   const onGameResultRef = useRef(onGameResult);
@@ -236,8 +240,9 @@ export function HtmlActivityFrame({
       if (!xapi) return;
 
       const currentResolved = resolvedActivityIdRef.current;
-      if (currentResolved && xapi.activityId && xapi.activityId !== currentResolved) return;
-
+      // For xAPI/H5P events, the statement's object.id is the H5P content ID,
+      // not the database activity UUID. Trust the parent context, not the
+      // statement's activity id.
       onGameResultRef.current?.({
         activityId: currentResolved ?? xapi.activityId ?? "",
         score: xapi.score,
@@ -285,6 +290,14 @@ export function HtmlActivityFrame({
 
       const data = event.data as unknown;
 
+      // H5P handshake: H5P asks the parent to confirm it's ready so that
+      // xAPI events and resize messages can flow. Without this handshake,
+      // H5P may suppress event delivery to the parent.
+      if (data && typeof data === "object" && (data as Record<string, unknown>).context === "h5p") {
+        frameWindow.postMessage({ context: "h5p", action: "ready" }, "*");
+        return;
+      }
+
       const solveadResult = parseSolveadResult(data);
       if (solveadResult) {
         if (!solveadResult.activityId && resolvedActivityIdRef.current) {
@@ -302,14 +315,9 @@ export function HtmlActivityFrame({
 
       const xapi = parseXapiStatement(data);
       if (xapi) {
-        if (
-          resolvedActivityIdRef.current &&
-          xapi.activityId &&
-          xapi.activityId !== resolvedActivityIdRef.current
-        ) {
-          return;
-        }
-
+        // For xAPI/H5P events, the statement's object.id is the H5P content ID,
+        // not the database activity UUID. Trust the parent context, not the
+        // statement's activity id.
         onGameResultRef.current?.({
           activityId: resolvedActivityIdRef.current ?? xapi.activityId ?? "",
           score: xapi.score,
@@ -371,6 +379,49 @@ export function HtmlActivityFrame({
     frameWindow.postMessage({ type: "solvead:request-result" }, "*");
   }, [resultRequestToken]);
 
+  useImperativeHandle(
+    ref,
+    () => ({
+      requestLatestResult: () => {
+        const frameWindow = iframeRef.current?.contentWindow as H5PFrameWindow | null;
+        if (!frameWindow) return;
+
+        // Try the solvead:request-result postMessage protocol first.
+        try {
+          frameWindow.postMessage({ type: "solvead:request-result" }, "*");
+        } catch {
+          // ignore
+        }
+
+        // As a fallback, query every H5P instance for its current xAPI state.
+        // This catches results that fired before the dispatcher was attached
+        // and any state H5P keeps internally after the game finishes.
+        try {
+          const instances = frameWindow.H5P?.instances ?? [];
+          for (const instance of instances) {
+            const data = instance?.getXAPIData?.();
+            if (!data) continue;
+            const xapi = parseXapiStatement(data);
+            if (!xapi) continue;
+            const currentResolved = resolvedActivityIdRef.current;
+            onGameResultRef.current?.({
+              activityId: currentResolved ?? xapi.activityId ?? "",
+              score: xapi.score,
+              maxScore: xapi.maxScore,
+              points: xapi.score,
+              stars: xapi.passed ? 3 : 1,
+              passed: xapi.passed,
+              sessionId: sessionIdRef.current,
+            });
+          }
+        } catch {
+          // Cross-origin or H5P not yet initialized - silently ignore.
+        }
+      },
+    }),
+    [],
+  );
+
   return (
     <iframe
       ref={iframeRef}
@@ -381,4 +432,4 @@ export function HtmlActivityFrame({
       onLoad={handleFrameLoad}
     />
   );
-}
+});

@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useId, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { ActivityGameResult, HtmlActivityFrame } from "@/app/components/HtmlActivityFrame";
+import { ActivityGameResult, HtmlActivityFrame, HtmlActivityFrameHandle } from "@/app/components/HtmlActivityFrame";
 import { SCREENSHOT_ACCEPT, MAX_SCREENSHOT_SIZE_BYTES, validateScreenshotFile } from "@/lib/screenshot";
 
 type ActivitySummary = {
@@ -86,6 +86,7 @@ export function LevelEntryCards({ levelNumber, lessonCount, lessonResourceUrl, a
   const activityContentRef = useRef<HTMLDivElement | null>(null);
   const submittedSessions = useRef<Set<string>>(new Set());
   const pendingGameResultRef = useRef<ActivityGameResult | null>(null);
+  const htmlFrameRef = useRef<HtmlActivityFrameHandle | null>(null);
 
   useEffect(() => {
     pendingGameResultRef.current = pendingGameResult;
@@ -146,7 +147,6 @@ export function LevelEntryCards({ levelNumber, lessonCount, lessonResourceUrl, a
     }
 
     const sessionId = activeActivity.sessionId;
-    const latestResult = pendingGameResultRef.current;
     const alreadySubmitted = submittedSessions.current.has(sessionId);
 
     if (alreadySubmitted) {
@@ -154,6 +154,16 @@ export function LevelEntryCards({ levelNumber, lessonCount, lessonResourceUrl, a
       return;
     }
 
+    // Actively request the latest result from the iframe. This catches xAPI
+    // events that fired before the parent attached to the H5P dispatcher and
+    // re-polls the H5P instance state synchronously.
+    htmlFrameRef.current?.requestLatestResult();
+
+    // Wait a moment for the request to be processed (H5P's getXAPIData is
+    // synchronous, but the solvead:request-result postMessage is async).
+    await new Promise((resolve) => window.setTimeout(resolve, 200));
+
+    const latestResult = pendingGameResultRef.current;
     if (!latestResult || latestResult.activityId !== activeActivity.id) {
       setAttemptError("No game result detected yet. Complete the activity before submitting.");
     } else {
@@ -174,6 +184,12 @@ export function LevelEntryCards({ levelNumber, lessonCount, lessonResourceUrl, a
       setAttemptError(screenshotValidation.error);
       return;
     }
+
+    // Last-chance poll: re-request the latest result from the iframe in case
+    // the user spent time picking a screenshot and the game result just
+    // arrived (or H5P only had a result when queried directly).
+    htmlFrameRef.current?.requestLatestResult();
+    await new Promise((resolve) => window.setTimeout(resolve, 200));
 
     const sessionId = activeActivity.sessionId;
     const latestResult = pendingGameResultRef.current;
@@ -363,6 +379,7 @@ try {
             <div ref={activityContentRef} className="flex-1">
 {activeActivity.html_url ? (
                    <HtmlActivityFrame
+                     ref={htmlFrameRef}
                      activityId={activeActivity.id}
                      title={`Activity HTML ${activeActivity.displayTitle}`}
                      className="h-full w-full bg-white"
