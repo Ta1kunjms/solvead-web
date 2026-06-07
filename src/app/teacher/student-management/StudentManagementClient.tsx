@@ -103,6 +103,7 @@ export default function StudentManagementClient() {
   const [pendingApprovalLoading, setPendingApprovalLoading] = useState<Record<string, boolean>>({})
   const [notifications, setNotifications] = useState<TeacherNotification[]>([])
   const [bulkSummary, setBulkSummary] = useState<{ succeeded: number; failed: number } | null>(null)
+  const [copiedNames, setCopiedNames] = useState(false)
   const refreshTimerRef = useRef<number | null>(null)
 
   const expandedProgressLoading = expandedStudentId
@@ -500,6 +501,45 @@ export default function StudentManagementClient() {
     }
   }
 
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const handleCopyFirstNames = () => {
+    const names = students.map((s) => s.first_name).join("\n")
+    if (!names) return
+
+    const fallback = () => {
+      const textarea = document.createElement("textarea")
+      textarea.value = names
+      textarea.style.position = "fixed"
+      textarea.style.opacity = "0"
+      document.body.appendChild(textarea)
+      textarea.select()
+      try {
+        document.execCommand("copy")
+        setCopiedNames(true)
+      } catch {
+        // ignore
+      }
+      document.body.removeChild(textarea)
+    }
+
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(names).then(
+        () => {
+          setCopiedNames(true)
+        },
+        () => fallback(),
+      )
+    } else {
+      fallback()
+    }
+
+    if (copyTimerRef.current) {
+      clearTimeout(copyTimerRef.current)
+    }
+    copyTimerRef.current = setTimeout(() => setCopiedNames(false), 1500)
+  }
+
   useEffect(() => {
     void fetchOverview()
   }, [fetchOverview])
@@ -627,6 +667,14 @@ export default function StudentManagementClient() {
               {saving === "bulk-approve" ? "Approving..." : `Approve Selected (${selectedStudents.size})`}
             </button>
           ) : null}
+          <button
+            type="button"
+            onClick={handleCopyFirstNames}
+            disabled={students.length === 0}
+            className="teacher-button-ghost text-sm"
+          >
+            {copiedNames ? "Copied!" : "Copy First Names"}
+          </button>
           <span className="teacher-chip">{students.length} students</span>
         </div>
         {isLoading ? (

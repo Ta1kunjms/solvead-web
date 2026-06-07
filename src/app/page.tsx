@@ -1136,9 +1136,7 @@ export default function Home() {
   const isVolumeMuted = preferences.volume_level <= 0;
   const isSfxMuted = preferences.sfx_level <= 0;
   const copy = getCopy(preferences.language);
-  const levelButtonSizeClass = isMobileViewport
-    ? "h-[clamp(56px,9vw,92px)] w-[clamp(56px,9vw,92px)]"
-    : "h-[clamp(80px,10.8vw,140px)] w-[clamp(80px,10.8vw,140px)]";
+  const levelButtonSizeClass = "h-[clamp(80px,10.8vw,140px)] w-[clamp(80px,10.8vw,140px)]";
 
   const renderRotateNotice = () => (
     <div className="relative min-h-screen overflow-hidden bg-[#d9a55d]">
@@ -1472,11 +1470,18 @@ export default function Home() {
       <div className="solvead-overlay absolute inset-0" />
 
       <div
-        className="absolute inset-0"
         style={isMobileViewport ? {
-          transform: `scale(${scale})`,
+          position: "absolute",
+          left: "50%",
+          top: 0,
+          width: "1440px",
+          height: "100dvh",
+          transform: `translateX(-50%) scale(${scale})`,
           transformOrigin: "top center",
-        } : undefined}
+        } as React.CSSProperties : {
+          position: "absolute",
+          inset: 0,
+        } as React.CSSProperties}
       >
         {unlockedCelebration ? (
         <div
@@ -1540,10 +1545,9 @@ export default function Home() {
           );
         })}
       </div>
-      </div>
 
       <div className="pointer-events-none absolute inset-x-2 top-[7.5rem] z-20 flex flex-wrap items-start gap-2 sm:inset-x-4 sm:top-[8rem] sm:gap-3">
-        <div className="pointer-events-auto origin-top-left scale-[0.68] flex flex-col gap-2 sm:scale-[0.75] sm:gap-3">
+        <div className={`pointer-events-auto origin-top-left flex flex-col gap-2 sm:gap-3 ${isMobileViewport ? "scale-100" : "scale-[0.68] sm:scale-[0.75]"}`}>
           {/* Old top-left profile card removed in favor of ProfileButton component */}
 
           {leaderboardExpanded ? (
@@ -1678,82 +1682,6 @@ export default function Home() {
             )}
           </div>
         )}
-
-        <div className="pointer-events-auto fixed right-2 top-2 z-30 flex items-center gap-1.5 sm:right-4 sm:top-4 sm:gap-3">
-          <button
-            type="button"
-            aria-pressed={!isVolumeMuted}
-            aria-label={`${copy.volume}: ${isVolumeMuted ? "Off" : "On"}`}
-            onClick={() => {
-              playClickSound();
-              const restoreVolume = lastVolumeRef.current > 0
-                ? lastVolumeRef.current
-                : DEFAULT_PREFERENCES.volume_level;
-              const nextVolume = isVolumeMuted ? restoreVolume : 0;
-              const next = {
-                ...preferences,
-                volume_level: nextVolume,
-              };
-              savePreferencesDebounced(next);
-              syncBackgroundAudio(next);
-            }}
-            className="flex h-11 w-11 items-center justify-center border-0 bg-transparent p-0 shadow-none transition hover:scale-105 sm:h-14 sm:w-14"
-          >
-            <Image
-              src="/assets/misc-buttons/Volume Button.png"
-              alt={copy.volume}
-              width={56}
-              height={56}
-              className={`h-full w-full object-contain ${isVolumeMuted ? "grayscale opacity-60" : ""}`}
-            />
-          </button>
-
-          <button
-            type="button"
-            aria-pressed={!isSfxMuted}
-            aria-label={`${copy.soundEffects}: ${isSfxMuted ? "Off" : "On"}`}
-            onClick={() => {
-              playClickSound();
-              const restoreSfx = lastSfxRef.current > 0
-                ? lastSfxRef.current
-                : DEFAULT_PREFERENCES.sfx_level;
-              const nextSfx = isSfxMuted ? restoreSfx : 0;
-              const next = {
-                ...preferences,
-                sfx_level: nextSfx,
-              };
-              savePreferencesDebounced(next);
-              syncBackgroundAudio(next);
-            }}
-            className="flex h-11 w-11 items-center justify-center border-0 bg-transparent p-0 shadow-none transition hover:scale-105 sm:h-14 sm:w-14"
-          >
-            <Image
-              src="/assets/misc-buttons/Sound Effects Button.png"
-              alt={copy.soundEffects}
-              width={56}
-              height={56}
-              className={`h-full w-full object-contain ${isSfxMuted ? "grayscale opacity-60" : ""}`}
-            />
-          </button>
-
-          <button
-            className="flex h-11 w-11 items-center justify-center border-0 bg-transparent p-0 shadow-none transition hover:scale-105 sm:h-14 sm:w-14"
-            onClick={() => {
-              playClickSound();
-              setShowSettings((previous) => !previous);
-              setShowHelp(false);
-            }}
-            aria-label="Open menu"
-          >
-            <Image
-              src="/assets/misc-buttons/3%20Horizontal%20Lines%20Button.png"
-              alt="Open menu"
-              width={56}
-              height={56}
-              className="h-full w-full object-contain"
-            />
-          </button>
-        </div>
       </div>
 
       <div className="pointer-events-none absolute inset-x-2 bottom-2 z-20 flex flex-wrap items-center justify-between gap-2 sm:inset-x-4 sm:bottom-3">
@@ -1764,10 +1692,7 @@ export default function Home() {
       </div>
 
       {showSettings && (
-        <div
-          className="panel-card absolute right-4 top-20 z-20 w-[min(94vw,480px)] overflow-hidden border-2 border-[#9e7640]/60 bg-[#e6b17a] p-0 shadow-[0_20px_36px_rgba(77,44,18,0.3)]"
-          style={isMobileViewport ? { transform: `scale(${scale})`, transformOrigin: "top right" } : undefined}
-        >
+        <div className="panel-card absolute right-4 top-20 z-20 w-[min(94vw,480px)] overflow-hidden border-2 border-[#9e7640]/60 bg-[#e6b17a] p-0 shadow-[0_20px_36px_rgba(77,44,18,0.3)]">
           <div className="bg-gradient-to-b from-[#f2c68a] via-[#e6b17a] to-[#dca86c] px-5 py-4">
             <div className="flex items-center justify-between">
               <h3 className="ribbon-title text-2xl text-[#5a3818]">{copy.settings}</h3>
@@ -1909,10 +1834,7 @@ export default function Home() {
       )}
 
       {showHelp && (
-        <div
-          className="panel-card absolute right-4 top-20 z-20 w-[min(92vw,360px)] p-4"
-          style={isMobileViewport ? { transform: `scale(${scale})`, transformOrigin: "top right" } : undefined}
-        >
+        <div className="panel-card absolute right-4 top-20 z-20 w-[min(92vw,360px)] p-4">
           <h3 className="ribbon-title text-lg text-[#543617]">{copy.helpInfo}</h3>
           <div className="mt-3 space-y-3 text-xs font-semibold text-[#5f4426]">
             <div>
@@ -1930,6 +1852,8 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      </div>
 
       {showResearchersModal && (
         <div
@@ -2056,6 +1980,82 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      <div className="fixed right-2 top-2 z-30 flex items-center gap-1.5 sm:right-4 sm:top-4 sm:gap-3">
+        <button
+          type="button"
+          aria-pressed={!isVolumeMuted}
+          aria-label={`${copy.volume}: ${isVolumeMuted ? "Off" : "On"}`}
+          onClick={() => {
+            playClickSound();
+            const restoreVolume = lastVolumeRef.current > 0
+              ? lastVolumeRef.current
+              : DEFAULT_PREFERENCES.volume_level;
+            const nextVolume = isVolumeMuted ? restoreVolume : 0;
+            const next = {
+              ...preferences,
+              volume_level: nextVolume,
+            };
+            savePreferencesDebounced(next);
+            syncBackgroundAudio(next);
+          }}
+          className="flex h-11 w-11 items-center justify-center border-0 bg-transparent p-0 shadow-none transition hover:scale-105 sm:h-14 sm:w-14"
+        >
+          <Image
+            src="/assets/misc-buttons/Volume Button.png"
+            alt={copy.volume}
+            width={56}
+            height={56}
+            className={`h-full w-full object-contain ${isVolumeMuted ? "grayscale opacity-60" : ""}`}
+          />
+        </button>
+
+        <button
+          type="button"
+          aria-pressed={!isSfxMuted}
+          aria-label={`${copy.soundEffects}: ${isSfxMuted ? "Off" : "On"}`}
+          onClick={() => {
+            playClickSound();
+            const restoreSfx = lastSfxRef.current > 0
+              ? lastSfxRef.current
+              : DEFAULT_PREFERENCES.sfx_level;
+            const nextSfx = isSfxMuted ? restoreSfx : 0;
+            const next = {
+              ...preferences,
+              sfx_level: nextSfx,
+            };
+            savePreferencesDebounced(next);
+            syncBackgroundAudio(next);
+          }}
+          className="flex h-11 w-11 items-center justify-center border-0 bg-transparent p-0 shadow-none transition hover:scale-105 sm:h-14 sm:w-14"
+        >
+          <Image
+            src="/assets/misc-buttons/Sound Effects Button.png"
+            alt={copy.soundEffects}
+            width={56}
+            height={56}
+            className={`h-full w-full object-contain ${isSfxMuted ? "grayscale opacity-60" : ""}`}
+          />
+        </button>
+
+        <button
+          className="flex h-11 w-11 items-center justify-center border-0 bg-transparent p-0 shadow-none transition hover:scale-105 sm:h-14 sm:w-14"
+          onClick={() => {
+            playClickSound();
+            setShowSettings((previous) => !previous);
+            setShowHelp(false);
+          }}
+          aria-label="Open menu"
+        >
+          <Image
+            src="/assets/misc-buttons/3%20Horizontal%20Lines%20Button.png"
+            alt="Open menu"
+            width={56}
+            height={56}
+            className="h-full w-full object-contain"
+          />
+        </button>
+      </div>
 
       <audio ref={audioRef} src={CLICK_SOUND_SRC} preload="auto" />
     </div>
