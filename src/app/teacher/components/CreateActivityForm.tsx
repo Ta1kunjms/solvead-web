@@ -223,7 +223,7 @@ export function CreateActivityForm({ levelId, levelNumber, onClose, onSaved }: P
             <label className="teacher-label">HTML Activity File (optional)</label>
             <input
               type="file"
-              accept=".html,.htm,text/html"
+              accept=".html,.htm,.zip,text/html,application/zip"
               onChange={(event) => {
                 const selected = event.target.files?.[0] ?? null;
                 setHtmlFile(selected);
@@ -232,7 +232,7 @@ export function CreateActivityForm({ levelId, levelNumber, onClose, onSaved }: P
               className="teacher-input"
               disabled={isSubmitting}
             />
-            <p className="teacher-helper mt-1">Upload the HTML export from Lumi.</p>
+            <p className="teacher-helper mt-1">Upload the HTML export from Lumi, or a ZIP of the full export folder.</p>
           </div>
 
           {error && <p className="teacher-alert teacher-alert--error">{error}</p>}

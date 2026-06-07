@@ -71,6 +71,8 @@ const createSessionId = () => {
   return `session-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 };
 
+
+
 export function LevelEntryCards({ levelNumber, lessonCount, lessonResourceUrl, activityList, copy }: Props) {
   const [activeActivity, setActiveActivity] = useState<ActiveActivity | null>(null);
   const [pendingGameResult, setPendingGameResult] = useState<ActivityGameResult | null>(null);
@@ -79,8 +81,6 @@ export function LevelEntryCards({ levelNumber, lessonCount, lessonResourceUrl, a
   const [attemptError, setAttemptError] = useState<string | null>(null);
   const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
   const [screenshotPreviewUrl, setScreenshotPreviewUrl] = useState<string | null>(null);
-  const [isCapturingScreenshot, setIsCapturingScreenshot] = useState(false);
-  const [hasAutoDetectedResult, setHasAutoDetectedResult] = useState(false);
   const titleId = useId();
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const activityContentRef = useRef<HTMLDivElement | null>(null);
@@ -138,7 +138,6 @@ export function LevelEntryCards({ levelNumber, lessonCount, lessonResourceUrl, a
     setAttemptError(null);
     setScreenshotFile(null);
     setScreenshotPreviewUrl(null);
-    setIsCapturingScreenshot(false);
     setShowScreenshotModal(false);
     submissionResultRef.current = null;
   };
@@ -161,25 +160,7 @@ export function LevelEntryCards({ levelNumber, lessonCount, lessonResourceUrl, a
     }
 
     setShowScreenshotModal(true);
-    setHasAutoDetectedResult(hasResultForActivity);
-
-    setIsCapturingScreenshot(true);
     setAttemptError(null);
-    const captured = await captureElementAsPngFile(
-      activityContentRef.current,
-      `activity-${activeActivity.id}-${sessionId}.png`,
-    );
-    setIsCapturingScreenshot(false);
-
-    if (captured) {
-      if (screenshotPreviewUrl) {
-        URL.revokeObjectURL(screenshotPreviewUrl);
-      }
-      setScreenshotFile(captured);
-      setScreenshotPreviewUrl(URL.createObjectURL(captured));
-    } else {
-      setAttemptError(AUTO_CAPTURE_FALLBACK_MESSAGE);
-    }
   };
 
   const handleScreenshotSubmit = async () => {
@@ -454,11 +435,7 @@ export function LevelEntryCards({ levelNumber, lessonCount, lessonResourceUrl, a
                 <div className="w-full max-w-md rounded-2xl border border-white/20 bg-slate-900/95 p-6 shadow-2xl">
                   <h3 className="text-lg font-semibold text-white">Submit Activity Result</h3>
                   <p className="mt-2 text-sm text-white/70">
-                    {isCapturingScreenshot
-                      ? "Capturing your activity automatically..."
-                      : hasAutoDetectedResult
-                        ? "A screenshot has been captured. You can replace it before submitting."
-                        : "We could not auto-detect a score. Your teacher will review the screenshot."}
+                    Select a screenshot for your teacher to review.
                   </p>
                   <div className="mt-6">
                     <label className="block text-sm font-medium text-teal-100">
@@ -538,7 +515,6 @@ export function ActivityPlayer({ activityId, items, onSubmitComplete }: Activity
   const [result, setResult] = useState<SubmitResult | null>(null);
   const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
   const [screenshotPreviewUrl, setScreenshotPreviewUrl] = useState<string | null>(null);
-  const [isCapturingScreenshot, setIsCapturingScreenshot] = useState(false);
   const formRef = useRef<HTMLFormElement | null>(null);
 
   const requiredMissing = items.filter(
@@ -574,39 +550,16 @@ export function ActivityPlayer({ activityId, items, onSubmitComplete }: Activity
       return;
     }
 
-    // Auto-capture the quiz area if the student has not yet attached a file.
-    let screenshotToUpload: File | null = screenshotFile;
-    if (!screenshotToUpload) {
-      setIsCapturingScreenshot(true);
-      const captured = await captureElementAsPngFile(
-        formRef.current,
-        `activity-${activityId}-quiz.png`,
-      );
-      setIsCapturingScreenshot(false);
-      if (captured) {
-        if (screenshotPreviewUrl) {
-          URL.revokeObjectURL(screenshotPreviewUrl);
-        }
-        screenshotToUpload = captured;
-        setScreenshotFile(captured);
-        setScreenshotPreviewUrl(URL.createObjectURL(captured));
-      } else {
-        setSubmitError(AUTO_CAPTURE_FALLBACK_MESSAGE);
-        return;
-      }
-    }
-
-    const screenshotValidation = await validateScreenshotFile(screenshotToUpload);
-    if ("error" in screenshotValidation) {
-      setSubmitError(screenshotValidation.error);
-      return;
-    }
-
-    if (!screenshotToUpload) {
+    if (!screenshotFile) {
       setSubmitError("Screenshot is required");
       return;
     }
 
+    const screenshotValidation = await validateScreenshotFile(screenshotFile);
+    if ("error" in screenshotValidation) {
+      setSubmitError(screenshotValidation.error);
+      return;
+    }
     setIsSubmitting(true);
 
     try {
@@ -772,7 +725,7 @@ export function ActivityPlayer({ activityId, items, onSubmitComplete }: Activity
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={screenshotPreviewUrl}
-              alt="Auto-captured activity screenshot"
+              alt="Selected screenshot preview"
               className="block max-h-56 w-full object-contain"
             />
           </div>

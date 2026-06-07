@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { LevelsCompletedGraph } from "./components/LevelsCompletedGraph";
+import { LeaderboardWidget } from "./components/LeaderboardWidget";
 
 type TeacherProfile = {
   first_name: string;
@@ -109,86 +110,94 @@ export default async function TeacherDashboardPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <article className="teacher-card p-4 teacher-stagger" style={{ animationDelay: "0.05s" }}>
-          <p className="teacher-label">Classes</p>
-          <p className="teacher-metric mt-2">{classes.length}</p>
-          <p className="teacher-helper mt-1">Active sections and groups</p>
-        </article>
-        <article className="teacher-card p-4 teacher-stagger" style={{ animationDelay: "0.1s" }}>
-          <p className="teacher-label">Total Students</p>
-          <p className="teacher-metric mt-2">{totalStudents}</p>
-          <p className="teacher-helper mt-1">Signed-in learners</p>
-        </article>
-        <article className="teacher-card p-4 teacher-stagger" style={{ animationDelay: "0.15s" }}>
-          <p className="teacher-label">Reflection Queue</p>
-          <p className="teacher-metric mt-2">{unreadReflections}</p>
-          <p className="teacher-helper mt-1">Awaiting teacher feedback</p>
-        </article>
-      </div>
+      <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
+        <div className="space-y-6 min-w-0">
+          <div className="grid gap-4 md:grid-cols-3">
+            <article className="teacher-card p-4 teacher-stagger" style={{ animationDelay: "0.05s" }}>
+              <p className="teacher-label">Classes</p>
+              <p className="teacher-metric mt-2">{classes.length}</p>
+              <p className="teacher-helper mt-1">Active sections and groups</p>
+            </article>
+            <article className="teacher-card p-4 teacher-stagger" style={{ animationDelay: "0.1s" }}>
+              <p className="teacher-label">Total Students</p>
+              <p className="teacher-metric mt-2">{totalStudents}</p>
+              <p className="teacher-helper mt-1">Signed-in learners</p>
+            </article>
+            <article className="teacher-card p-4 teacher-stagger" style={{ animationDelay: "0.15s" }}>
+              <p className="teacher-label">Reflection Queue</p>
+              <p className="teacher-metric mt-2">{unreadReflections}</p>
+              <p className="teacher-helper mt-1">Awaiting teacher feedback</p>
+            </article>
+          </div>
 
-      <div className="teacher-panel p-5">
-        <LevelsCompletedGraph initialClasses={classItemsForGraph} />
-      </div>
+          <div className="teacher-panel p-5">
+            <LevelsCompletedGraph initialClasses={classItemsForGraph} />
+          </div>
 
-      <div className="teacher-panel p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold text-slate-900">Student Management Snapshot</h2>
-          <Link href="/teacher/student-management" className="teacher-button-ghost">
-            View all
-          </Link>
-        </div>
-        <div className="mt-3 space-y-3">
-          {classes.length === 0 ? (
-            <p className="teacher-helper">No classes found yet. Create your first class to begin monitoring.</p>
-          ) : (
-            classes.map((row) => (
-              <article key={row.class_id} className="teacher-row p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <h3 className="text-base font-semibold text-slate-900">
-                      {row.class_name}
-                      {row.section ? ` - ${row.section}` : ""}
-                    </h3>
-                    <p className="teacher-helper mt-1">Average score: {Number(row.average_best_score).toFixed(2)}%</p>
-                    <p className="mt-1 text-xs text-slate-500">
-                      Last progress update: {row.last_progress_at ? new Date(row.last_progress_at).toLocaleString() : "No updates yet"}
-                    </p>
-                  </div>
-                  <span className="teacher-chip">{row.student_count} students</span>
-                </div>
-              </article>
-            ))
-          )}
-        </div>
-      </div>
+          <div className="teacher-panel p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold text-slate-900">Student Management Snapshot</h2>
+              <Link href="/teacher/student-management" className="teacher-button-ghost">
+                View all
+              </Link>
+            </div>
+            <div className="mt-3 space-y-3">
+              {classes.length === 0 ? (
+                <p className="teacher-helper">No classes found yet. Create your first class to begin monitoring.</p>
+              ) : (
+                classes.map((row) => (
+                  <article key={row.class_id} className="teacher-row p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h3 className="text-base font-semibold text-slate-900">
+                          {row.class_name}
+                          {row.section ? ` - ${row.section}` : ""}
+                        </h3>
+                        <p className="teacher-helper mt-1">Average score: {Number(row.average_best_score).toFixed(2)}%</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Last progress update: {row.last_progress_at ? new Date(row.last_progress_at).toLocaleString() : "No updates yet"}
+                        </p>
+                      </div>
+                      <span className="teacher-chip">{row.student_count} students</span>
+                    </div>
+                  </article>
+                ))
+              )}
+            </div>
+          </div>
 
-      <div className="teacher-panel p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold text-slate-900">All Students</h2>
-          <span className="teacher-chip">{totalStudents} students</span>
+          <div className="teacher-panel p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold text-slate-900">All Students</h2>
+              <span className="teacher-chip">{totalStudents} students</span>
+            </div>
+            <div className="mt-3 space-y-2 max-h-96 overflow-y-auto pr-1">
+              {studentDirectoryErrorMessage ? (
+                <p className="teacher-alert teacher-alert--error">{studentDirectoryErrorMessage}</p>
+              ) : students.length === 0 ? (
+                <p className="teacher-helper">No students yet. Students appear after signing in.</p>
+              ) : (
+                students.map((student) => (
+                  <article key={student.student_id} className="teacher-row p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h3 className="text-base font-semibold text-slate-900">
+                          {student.first_name} {student.last_name}
+                        </h3>
+                        <p className="text-xs text-slate-500">LRN: {student.lrn || "N/A"}</p>
+                      </div>
+                      <span className="teacher-chip">{student.onboarding_complete ? "Onboarded" : "Pending"}</span>
+                    </div>
+                  </article>
+                ))
+              )}
+            </div>
+          </div>
         </div>
-        <div className="mt-3 space-y-2 max-h-96 overflow-y-auto pr-1">
-          {studentDirectoryErrorMessage ? (
-            <p className="teacher-alert teacher-alert--error">{studentDirectoryErrorMessage}</p>
-          ) : students.length === 0 ? (
-            <p className="teacher-helper">No students yet. Students appear after signing in.</p>
-          ) : (
-            students.map((student) => (
-              <article key={student.student_id} className="teacher-row p-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <h3 className="text-base font-semibold text-slate-900">
-                      {student.first_name} {student.last_name}
-                    </h3>
-                    <p className="text-xs text-slate-500">LRN: {student.lrn || "N/A"}</p>
-                  </div>
-                  <span className="teacher-chip">{student.onboarding_complete ? "Onboarded" : "Pending"}</span>
-                </div>
-              </article>
-            ))
-          )}
-        </div>
+
+        <aside className="lg:sticky lg:top-6 lg:self-start">
+          <LeaderboardWidget />
+        </aside>
       </div>
     </section>
   );

@@ -261,7 +261,7 @@ export function ActivityEditorPanel({ activity, levelNumber, levelTitle }: Props
           <div>
             <p className="teacher-eyebrow">HTML Activity</p>
             <h3 className="text-lg font-semibold text-slate-900">Upload an HTML file</h3>
-            <p className="teacher-helper mt-1">Upload a single HTML export from Lumi. Sanitized HTML will be rendered for students.</p>
+            <p className="teacher-helper mt-1">Upload the HTML export from Lumi, or a ZIP of the full export folder.</p>
           </div>
           {htmlUrl && (
             <a
@@ -278,7 +278,7 @@ export function ActivityEditorPanel({ activity, levelNumber, levelTitle }: Props
         <div className="grid gap-3">
           <input
             type="file"
-            accept=".html,.htm,text/html"
+            accept=".html,.htm,.zip,text/html,application/zip"
             onChange={(event) => {
               const selected = event.target.files?.[0] ?? null
               setHtmlFile(selected)
@@ -315,7 +315,7 @@ export function ActivityEditorPanel({ activity, levelNumber, levelTitle }: Props
                activityId={activity.id}
                title="Activity HTML Preview"
                className="h-96 w-full rounded-lg border border-slate-200 bg-white"
-               sandbox="allow-scripts"
+               sandbox="allow-scripts allow-same-origin"
              />
            </div>
          ) : (

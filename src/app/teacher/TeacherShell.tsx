@@ -3,7 +3,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LeaderboardWidget } from "./components/LeaderboardWidget";
 
 type NavItem = {
   href: string;
@@ -68,8 +67,6 @@ export function TeacherShell({ children }: { children: ReactNode }) {
                 );
               })}
             </nav>
-
-            {pathname === "/teacher" && <LeaderboardWidget />}
 
           </div>
         </aside>
