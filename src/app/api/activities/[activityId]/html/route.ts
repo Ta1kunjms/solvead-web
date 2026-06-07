@@ -82,7 +82,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<P
 
   const { allowed, error, statusCode } = await verifyActivityAccess(supabase, activityId, user?.id ?? null);
   if (!allowed) {
-    return new NextResponse(createErrorHtml(error, statusCode ?? 500), {
+    return new NextResponse(createErrorHtml(error || "Unknown error", statusCode ?? 500), {
       status: statusCode ?? 500,
       headers: { "Content-Type": "text/html; charset=utf-8" },
     });
