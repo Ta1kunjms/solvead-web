@@ -36,12 +36,16 @@ export type ResponsiveScaleResult = {
   scale: number;
   isMobileViewport: boolean;
   isMobilePortrait: boolean;
+  viewportWidth: number;
+  viewportHeight: number;
 };
 
 export function useResponsiveScale(): ResponsiveScaleResult {
   const [scale, setScale] = useState(initialScale);
   const [isMobileViewport, setIsMobileViewport] = useState(initialMobileViewport);
   const [isMobilePortrait, setIsMobilePortrait] = useState(initialMobilePortrait);
+  const [viewportWidth, setViewportWidth] = useState(() => (typeof window === "undefined" ? 0 : window.innerWidth));
+  const [viewportHeight, setViewportHeight] = useState(() => (typeof window === "undefined" ? 0 : window.innerHeight));
 
   const update = useCallback(() => {
     const { w, h, touchCapable } = getViewportInfo();
@@ -50,6 +54,8 @@ export function useResponsiveScale(): ResponsiveScaleResult {
     setIsMobileViewport(mobile);
     setIsMobilePortrait(portrait);
     setScale(mobile ? w / DESIGN_WIDTH : 1);
+    setViewportWidth(w);
+    setViewportHeight(h);
   }, []);
 
   useEffect(() => {
@@ -61,5 +67,5 @@ export function useResponsiveScale(): ResponsiveScaleResult {
     };
   }, [update]);
 
-  return { scale, isMobileViewport, isMobilePortrait };
+  return { scale, isMobileViewport, isMobilePortrait, viewportWidth, viewportHeight };
 }

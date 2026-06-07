@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { getCopy } from "@/lib/i18n";
 import { useResponsiveScale } from "@/lib/useResponsiveScale";
+import ProfileButton from "./components/ProfileButton";
 import {
   clampLevel,
   DEFAULT_PREFERENCES,
@@ -238,7 +239,7 @@ export default function Home() {
   const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
   const [leaderboardFetched, setLeaderboardFetched] = useState(false);
   const [leaderboardExpanded, setLeaderboardExpanded] = useState(false);
-  const { scale, isMobileViewport, isMobilePortrait } = useResponsiveScale();
+  const { scale, isMobileViewport, isMobilePortrait, viewportWidth, viewportHeight } = useResponsiveScale();
 
   const filteredProfileIcons = useMemo(
     () => PROFILE_ICONS.filter((icon) => !selectedGender || icon.gender === selectedGender),
@@ -1472,17 +1473,30 @@ export default function Home() {
       <div
         style={isMobileViewport ? {
           position: "absolute",
-          left: "50%",
           top: 0,
-          width: "1440px",
-          height: "100dvh",
-          transform: `translateX(-50%) scale(${scale})`,
-          transformOrigin: "top center",
+          left: 0,
+          width: "100%",
+          height: "100%",
+          overflow: "hidden",
         } as React.CSSProperties : {
           position: "absolute",
           inset: 0,
         } as React.CSSProperties}
       >
+        <div
+          style={isMobileViewport ? {
+            position: "absolute",
+            top: 0,
+            left: 0,
+            width: "1440px",
+            height: viewportWidth > 0 ? `${(viewportHeight * 1440) / viewportWidth}px` : "100%",
+            transformOrigin: "top left",
+            transform: `scale(${scale})`,
+          } as React.CSSProperties : {
+            position: "absolute",
+            inset: 0,
+          } as React.CSSProperties}
+        >
         {unlockedCelebration ? (
         <div
           className="pointer-events-none absolute left-1/2 top-6 z-40 -translate-x-1/2 rounded-full border-2 border-amber-300 bg-emerald-500/95 px-5 py-2 text-sm font-black text-white shadow-lg"
@@ -1563,8 +1577,7 @@ export default function Home() {
                 <h3 className="ribbon-title text-sm text-[#5a3818] sm:text-base">{copy.leaderboards}</h3>
                 <span className="text-[#5a3818]">✕</span>
               </button>
-              {isMobileViewport ? null : (
-                <div className="mt-2 overflow-hidden rounded-xl border border-[#8d6131]/40 bg-[#d9a55f] px-3 py-2">
+              <div className="mt-2 overflow-hidden rounded-xl border border-[#8d6131]/40 bg-[#d9a55d] px-3 py-2">
                 <div className="mb-2 flex items-center gap-2">
                   <Image src="/assets/misc-buttons/Trophy Button.png" alt="Top players" width={22} height={22} className="h-5 w-5 object-contain" />
                   <p className="text-sm font-black text-[#5a3818] sm:text-base">{copy.topPlayers}</p>
@@ -1606,7 +1619,6 @@ export default function Home() {
                   </div>
                 )}
               </div>
-            )}
           </div>
           ) : (
             <button
@@ -1628,60 +1640,6 @@ export default function Home() {
           )}
         </div>
 
-        {isMobileViewport && leaderboardExpanded && (
-          <div className="pointer-events-auto absolute left-2 top-[7.5rem] z-30 w-[min(86vw,320px)] rounded-2xl border border-[#8d6131]/45 bg-[#f4e1b6]/98 px-3 py-3 shadow-[0_16px_28px_rgba(53,29,7,0.35)] sm:left-4 sm:top-[8rem] sm:w-[min(80vw,360px)]">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Image src="/assets/misc-buttons/Trophy Button.png" alt="Top players" width={22} height={22} className="h-5 w-5 object-contain" />
-                <p className="text-sm font-black text-[#5a3818] sm:text-base">{copy.topPlayers}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setLeaderboardExpanded(false)}
-                className="rounded-full bg-[#e8c07e] px-2 py-1 text-[11px] font-black text-[#5a3818] shadow"
-              >
-                Close
-              </button>
-            </div>
-
-            {leaderboardLoading ? (
-              <p className="text-sm font-semibold text-[#6b4827]">Loading...</p>
-            ) : leaderboardError ? (
-              <p className="text-sm font-semibold text-[#6b4827]">{leaderboardError}</p>
-            ) : leaderboardRows.length === 0 ? (
-              <p className="text-sm font-semibold text-[#6b4827]">No players yet.</p>
-            ) : (
-              <div className="max-h-[48vh] space-y-1 overflow-auto pr-1">
-                {leaderboardRows.slice(0, 10).map((row) => {
-                  const medalSrc = LEADERBOARD_MEDALS[row.rank];
-
-                  return (
-                    <div
-                      key={row.student_id}
-                      className="flex items-center justify-between rounded-lg bg-[#f3d29f]/70 px-2 py-1.5 text-sm font-bold text-[#5a3818]"
-                    >
-                      <div className="flex min-w-0 items-center gap-2">
-                        {medalSrc ? (
-                          <Image
-                            src={medalSrc}
-                            alt={`Medal ${row.rank}`}
-                            width={24}
-                            height={24}
-                            className="h-5 w-5 object-contain"
-                          />
-                        ) : (
-                          <span className="font-black">#{row.rank}</span>
-                        )}
-                        <span className="truncate">{row.student_name}</span>
-                      </div>
-                      <span className="shrink-0">{row.total_points} pts</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
       <div className="pointer-events-none absolute inset-x-2 bottom-2 z-20 flex flex-wrap items-center justify-between gap-2 sm:inset-x-4 sm:bottom-3">
@@ -1692,7 +1650,7 @@ export default function Home() {
       </div>
 
       {showSettings && (
-        <div className="panel-card absolute right-4 top-20 z-20 w-[min(94vw,480px)] overflow-hidden border-2 border-[#9e7640]/60 bg-[#e6b17a] p-0 shadow-[0_20px_36px_rgba(77,44,18,0.3)]">
+        <div className="panel-card absolute right-4 top-20 z-20 w-[min(94vw,480px)] origin-top-right scale-[0.75] overflow-hidden border-2 border-[#9e7640]/60 bg-[#e6b17a] p-0 shadow-[0_20px_36px_rgba(77,44,18,0.3)]">
           <div className="bg-gradient-to-b from-[#f2c68a] via-[#e6b17a] to-[#dca86c] px-5 py-4">
             <div className="flex items-center justify-between">
               <h3 className="ribbon-title text-2xl text-[#5a3818]">{copy.settings}</h3>
@@ -1853,135 +1811,9 @@ export default function Home() {
         </div>
       )}
 
-      </div>
+      <ProfileButton />
 
-      {showResearchersModal && (
-        <div
-          className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4"
-          onClick={() => setShowResearchersModal(false)}
-          role="presentation"
-        >
-          <div
-            className="relative w-full max-w-5xl rounded-2xl border-4 border-[#c9a670] bg-gradient-to-b from-[#f7e9c8] via-[#e7c98e] to-[#d7a95f] p-6 shadow-2xl"
-            onClick={(event) => event.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Researchers profile"
-          >
-            <button
-              type="button"
-              onClick={() => setShowResearchersModal(false)}
-              className="absolute right-4 top-4 rounded-full bg-[#f7e2b7] w-10 h-10 flex items-center justify-center text-[#5a3818] font-bold text-lg shadow hover:bg-[#f1d5a0] transition"
-              aria-label="Close profile modal"
-            >
-              ✕
-            </button>
-
-            <div className="text-center mb-6">
-              <h2 className="ribbon-title text-2xl text-[#533414]">RESEARCH TEAM</h2>
-              <p className="mt-1 text-sm font-semibold text-[#6b4827]">Meet the minds behind SOLVEAD</p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {RESEARCHER_PROFILES.map((researcher) => (
-                <article
-                  key={researcher.id}
-                  className="bg-white/70 rounded-xl border-2 border-[#b3894d] p-4 text-center hover:scale-105 transition-transform"
-                >
-                  <Image
-                    src={researcher.image}
-                    alt={researcher.name}
-                    width={120}
-                    height={120}
-                    className="mx-auto h-24 w-24 rounded-full border-4 border-[#e6c78a] object-cover shadow-lg"
-                  />
-                  <p className="mt-3 text-base font-black text-[#5b3717]">{researcher.name}</p>
-                  <p className="text-sm font-semibold text-[#6c4827]">{researcher.role}</p>
-                  <p className="mt-1 text-xs font-medium text-[#8a6a3d]">{researcher.school}</p>
-                  <p className="mt-3 text-xs font-semibold text-[#5a3d16] leading-relaxed">{researcher.description}</p>
-                </article>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showAboutGame && (
-        <div
-          className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-3 sm:p-6"
-          onClick={() => setShowAboutGame(false)}
-          role="presentation"
-        >
-          <div
-            className="relative w-[90vw] max-w-4xl rounded-2xl border-4 border-[#c9a670] bg-gradient-to-b from-[#f7e9c8] via-[#e7c98e] to-[#d7a95f] p-6 shadow-2xl"
-            onClick={(event) => event.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-label="About the Game"
-          >
-            <button
-              type="button"
-              onClick={() => setShowAboutGame(false)}
-              className="absolute right-3 top-3 rounded-full bg-[#f7e2b7] w-8 h-8 flex items-center justify-center text-[#5a3818] font-bold shadow hover:bg-[#f1d5a0] transition"
-              aria-label="Close about modal"
-            >
-              ✕
-            </button>
-
-            <div className="text-center mb-6">
-              <h2 className="ribbon-title text-2xl text-[#533414]">ABOUT THE GAME</h2>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-white/60 rounded-xl border-2 border-[#b3894d] p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-2xl">📐</span>
-                  <h3 className="ribbon-title text-lg text-[#4f3313]">Game Overview</h3>
-                </div>
-                <p className="text-sm font-semibold text-[#5a3d16] leading-relaxed">
-                  SOLVEAD is a Peace-Embedded Gamified Learning Tool (PEGLT) developed to facilitate the acquisition of Grade 9 first-quarter Geometry competencies through a structured, interactive, and mastery-driven digital environment. The game comprises fifteen progressively sequenced levels, each integrating discussion, guided activities, and assessment components to ensure coherent knowledge construction and skill reinforcement. Advancement is contingent upon demonstrated mastery.
-                </p>
-              </div>
-
-              <div className="bg-white/60 rounded-xl border-2 border-[#b3894d] p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-2xl">💡</span>
-                  <h3 className="ribbon-title text-lg text-[#4f3313]">Objectives</h3>
-                </div>
-                <p className="text-sm font-semibold text-[#5a3d16] leading-relaxed">
-                  The primary objective of SOLVEAD is to holistically develop learners by integrating cognitive and socio-emotional dimensions of learning. It aims to deepen students' conceptual understanding of Geometry while cultivating peace awareness, including conflict prevention, resolution, and mediation skills.
-                </p>
-              </div>
-
-              <div className="bg-white/60 rounded-xl border-2 border-[#b3894d] p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-2xl">📊</span>
-                  <h3 className="ribbon-title text-lg text-[#4f3313]">Game Structure</h3>
-                </div>
-                <p className="text-sm font-semibold text-[#5a3d16] leading-relaxed">
-                  SOLVEAD uses a level-based progression system with fifteen stages, each with conceptual discussion, interactive application, and formative assessment. Gamification elements, rewards, point systems, and immediate feedback enhance motivation and support learner autonomy.
-                </p>
-              </div>
-
-              <div className="bg-white/60 rounded-xl border-2 border-[#b3894d] p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-2xl">🕊️</span>
-                  <h3 className="ribbon-title text-lg text-[#4f3313]">Peace Education</h3>
-                </div>
-                <p className="text-sm font-semibold text-[#5a3d16] leading-relaxed">
-                  Aligned with UNESCO IBE framework, SOLVEAD integrates peace education principles through scenario-based narratives that emphasize conflict prevention, resolution, and mediation skills, fostering a respectful and collaborative learning environment.
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-4 text-center text-xs font-semibold text-[#6b4a22]">
-              Version {new Date().getFullYear()} Taikun. All rights reserved.
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="fixed right-2 top-2 z-30 flex items-center gap-1.5 sm:right-4 sm:top-4 sm:gap-3">
+      <div className="absolute right-2 top-2 z-30 flex items-center gap-1.5 sm:right-4 sm:top-4 sm:gap-3">
         <button
           type="button"
           aria-pressed={!isVolumeMuted}
@@ -2056,6 +1888,138 @@ export default function Home() {
           />
         </button>
       </div>
+
+      </div>
+
+        </div>
+
+      {showResearchersModal && (
+        <div
+          className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4"
+          onClick={() => setShowResearchersModal(false)}
+          role="presentation"
+        >
+          <div
+            style={isMobileViewport ? { transform: "scale(0.5)", transformOrigin: "center" } : undefined}
+            className="relative w-full max-w-5xl rounded-2xl border-4 border-[#c9a670] bg-gradient-to-b from-[#f7e9c8] via-[#e7c98e] to-[#d7a95f] p-6 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Researchers profile"
+          >
+            <button
+              type="button"
+              onClick={() => setShowResearchersModal(false)}
+              className="absolute right-4 top-4 rounded-full bg-[#f7e2b7] w-10 h-10 flex items-center justify-center text-[#5a3818] font-bold text-lg shadow hover:bg-[#f1d5a0] transition"
+              aria-label="Close profile modal"
+            >
+              ✕
+            </button>
+
+            <div className="text-center mb-6">
+              <h2 className="ribbon-title text-2xl text-[#533414]">RESEARCH TEAM</h2>
+              <p className="mt-1 text-sm font-semibold text-[#6b4827]">Meet the minds behind SOLVEAD</p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {RESEARCHER_PROFILES.map((researcher) => (
+                <article
+                  key={researcher.id}
+                  className="bg-white/70 rounded-xl border-2 border-[#b3894d] p-4 text-center hover:scale-105 transition-transform"
+                >
+                  <Image
+                    src={researcher.image}
+                    alt={researcher.name}
+                    width={120}
+                    height={120}
+                    className="mx-auto h-24 w-24 rounded-full border-4 border-[#e6c78a] object-cover shadow-lg"
+                  />
+                  <p className="mt-3 text-base font-black text-[#5b3717]">{researcher.name}</p>
+                  <p className="text-sm font-semibold text-[#6c4827]">{researcher.role}</p>
+                  <p className="mt-1 text-xs font-medium text-[#8a6a3d]">{researcher.school}</p>
+                  <p className="mt-3 text-xs font-semibold text-[#5a3d16] leading-relaxed">{researcher.description}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAboutGame && (
+        <div
+          className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-3 sm:p-6"
+          onClick={() => setShowAboutGame(false)}
+          role="presentation"
+        >
+          <div
+            style={isMobileViewport ? { transform: "scale(0.5)", transformOrigin: "center" } : undefined}
+            className="relative w-[90vw] max-w-4xl rounded-2xl border-4 border-[#c9a670] bg-gradient-to-b from-[#f7e9c8] via-[#e7c98e] to-[#d7a95f] p-6 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="About the Game"
+          >
+            <button
+              type="button"
+              onClick={() => setShowAboutGame(false)}
+              className="absolute right-3 top-3 rounded-full bg-[#f7e2b7] w-8 h-8 flex items-center justify-center text-[#5a3818] font-bold shadow hover:bg-[#f1d5a0] transition"
+              aria-label="Close about modal"
+            >
+              ✕
+            </button>
+
+            <div className="text-center mb-6">
+              <h2 className="ribbon-title text-2xl text-[#533414]">ABOUT THE GAME</h2>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-white/60 rounded-xl border-2 border-[#b3894d] p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-2xl">📐</span>
+                  <h3 className="ribbon-title text-lg text-[#4f3313]">Game Overview</h3>
+                </div>
+                <p className="text-sm font-semibold text-[#5a3d16] leading-relaxed">
+                  SOLVEAD is a Peace-Embedded Gamified Learning Tool (PEGLT) developed to facilitate the acquisition of Grade 9 first-quarter Geometry competencies through a structured, interactive, and mastery-driven digital environment. The game comprises fifteen progressively sequenced levels, each integrating discussion, guided activities, and assessment components to ensure coherent knowledge construction and skill reinforcement. Advancement is contingent upon demonstrated mastery.
+                </p>
+              </div>
+
+              <div className="bg-white/60 rounded-xl border-2 border-[#b3894d] p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-2xl">💡</span>
+                  <h3 className="ribbon-title text-lg text-[#4f3313]">Objectives</h3>
+                </div>
+                <p className="text-sm font-semibold text-[#5a3d16] leading-relaxed">
+                  The primary objective of SOLVEAD is to holistically develop learners by integrating cognitive and socio-emotional dimensions of learning. It aims to deepen students' conceptual understanding of Geometry while cultivating peace awareness, including conflict prevention, resolution, and mediation skills.
+                </p>
+              </div>
+
+              <div className="bg-white/60 rounded-xl border-2 border-[#b3894d] p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-2xl">📊</span>
+                  <h3 className="ribbon-title text-lg text-[#4f3313]">Game Structure</h3>
+                </div>
+                <p className="text-sm font-semibold text-[#5a3d16] leading-relaxed">
+                  SOLVEAD uses a level-based progression system with fifteen stages, each with conceptual discussion, interactive application, and formative assessment. Gamification elements, rewards, point systems, and immediate feedback enhance motivation and support learner autonomy.
+                </p>
+              </div>
+
+              <div className="bg-white/60 rounded-xl border-2 border-[#b3894d] p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-2xl">🕊️</span>
+                  <h3 className="ribbon-title text-lg text-[#4f3313]">Peace Education</h3>
+                </div>
+                <p className="text-sm font-semibold text-[#5a3d16] leading-relaxed">
+                  Aligned with UNESCO IBE framework, SOLVEAD integrates peace education principles through scenario-based narratives that emphasize conflict prevention, resolution, and mediation skills, fostering a respectful and collaborative learning environment.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 text-center text-xs font-semibold text-[#6b4a22]">
+              Version {new Date().getFullYear()} Taikun. All rights reserved.
+            </div>
+          </div>
+        </div>
+      )}
 
       <audio ref={audioRef} src={CLICK_SOUND_SRC} preload="auto" />
     </div>

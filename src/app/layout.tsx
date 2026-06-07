@@ -3,7 +3,6 @@ import { Cinzel, Nunito } from "next/font/google";
 import "./globals.css";
 import { PwaRegistration } from "./components/PwaRegistration";
 import { StudentPortalMusic } from "./components/StudentPortalMusic";
-import { ProfileButtonWrapper } from "./components/ProfileButtonWrapper";
 
 const titleFont = Cinzel({
   variable: "--font-title",
@@ -50,7 +49,6 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col">
         <PwaRegistration />
         <StudentPortalMusic />
-        <ProfileButtonWrapper />
         {children}
       </body>
     </html>

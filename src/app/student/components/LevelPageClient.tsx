@@ -70,7 +70,7 @@ export function LevelPageClient({
           transformOrigin: "top center",
         } : undefined}
       >
-        <div className="flex w-full max-w-6xl flex-col gap-2 md:flex-row md:items-start md:justify-between mb-4">
+        <div className="flex w-full max-w-6xl flex-col items-start gap-3 mb-4 md:flex-row md:items-center md:justify-between md:gap-4">
           <div>
             <p className="uppercase tracking-[0.4em] text-white/80 text-xs">
               Level {levelNumber}
@@ -94,14 +94,29 @@ export function LevelPageClient({
           activityList={activityList}
           copy={copy}
         />
-        {announcement ? (
-          <div className="pointer-events-none fixed left-3 bottom-3 z-30 max-w-xs md:left-6 md:bottom-6 md:max-w-sm">
-            <div className="bg-slate-900/80 text-white rounded-lg shadow-lg p-4">
-              <p className="text-amber-100 text-sm">{announcement}</p>
-            </div>
-          </div>
-        ) : null}
       </div>
+
+      {announcement ? (
+        <div
+          style={isMobileViewport ? {
+            position: "fixed",
+            left: 12,
+            bottom: 12,
+            zIndex: 30,
+            maxWidth: 320,
+          } : {
+            position: "fixed",
+            left: 24,
+            bottom: 24,
+            zIndex: 30,
+            maxWidth: 384,
+          }}
+        >
+          <div className="bg-slate-900/80 text-white rounded-lg shadow-lg p-4">
+            <p className="text-amber-100 text-sm">{announcement}</p>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
