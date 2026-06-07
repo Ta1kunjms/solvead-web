@@ -13,7 +13,8 @@ export type ActivityGameResult = {
 };
 
 type Props = {
-  htmlUrl: string;
+  htmlUrl?: string;
+  activityId?: string;
   title: string;
   className?: string;
   sandbox?: string;
@@ -165,6 +166,7 @@ const parseSolveadResult = (raw: unknown): ActivityGameResult | null => {
 
 export function HtmlActivityFrame({
   htmlUrl,
+  activityId,
   title,
   className,
   sandbox = "allow-scripts allow-same-origin",
@@ -174,10 +176,18 @@ export function HtmlActivityFrame({
   onGameResult,
 }: Props) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
-  const [cacheBustedUrl] = useState(() => {
+  const resolvedActivityId = expectedActivityId ?? activityId;
+
+  const getIframeSrc = () => {
+    if (activityId) {
+      return `/api/activities/${activityId}/html?v=${Date.now()}`;
+    }
+    if (!htmlUrl) return "";
     const separator = htmlUrl.includes("?") ? "&" : "?";
     return `${htmlUrl}${separator}v=${Date.now()}`;
-  });
+  };
+
+  const [cacheBustedUrl] = useState(() => getIframeSrc());
 
   useEffect(() => {
     if (!onGameResult) return;
@@ -190,20 +200,20 @@ export function HtmlActivityFrame({
 
       const solveadResult = parseSolveadResult(data);
       if (solveadResult) {
-        if (!solveadResult.activityId && expectedActivityId) {
-          solveadResult.activityId = expectedActivityId;
+        if (!solveadResult.activityId && resolvedActivityId) {
+          solveadResult.activityId = resolvedActivityId;
         }
-        if (expectedActivityId && solveadResult.activityId !== expectedActivityId) return;
+        if (resolvedActivityId && solveadResult.activityId !== resolvedActivityId) return;
         onGameResult(solveadResult);
         return;
       }
 
       const xapi = parseXapiStatement(data);
       if (!xapi || !xapi.terminal) return;
-      if (expectedActivityId && xapi.activityId && xapi.activityId !== expectedActivityId) return;
+      if (resolvedActivityId && xapi.activityId && xapi.activityId !== resolvedActivityId) return;
 
       onGameResult({
-        activityId: expectedActivityId ?? xapi.activityId ?? "",
+        activityId: resolvedActivityId ?? xapi.activityId ?? "",
         score: xapi.score,
         maxScore: xapi.maxScore,
         points: xapi.score,
@@ -217,28 +227,28 @@ export function HtmlActivityFrame({
     return () => {
       window.removeEventListener("message", onMessage);
     };
-  }, [expectedActivityId, sessionId, onGameResult]);
+  }, [resolvedActivityId, sessionId, onGameResult]);
 
   useEffect(() => {
     const frameWindow = iframeRef.current?.contentWindow;
-    if (!frameWindow || !expectedActivityId) return;
+    if (!frameWindow || !resolvedActivityId) return;
     frameWindow.postMessage(
       {
         type: "solvead:session",
-        activityId: expectedActivityId,
+        activityId: resolvedActivityId,
         sessionId,
       },
       "*",
     );
-  }, [expectedActivityId, sessionId]);
+  }, [resolvedActivityId, sessionId]);
 
   const handleFrameLoad = () => {
     const frameWindow = iframeRef.current?.contentWindow;
-    if (!frameWindow || !expectedActivityId) return;
+    if (!frameWindow || !resolvedActivityId) return;
     frameWindow.postMessage(
       {
         type: "solvead:session",
-        activityId: expectedActivityId,
+        activityId: resolvedActivityId,
         sessionId,
       },
       "*",

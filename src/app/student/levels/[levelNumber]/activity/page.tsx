@@ -128,27 +128,27 @@ export default async function StudentActivityPage({ params }: { params: Promise<
                         {activity.is_required ? "Required for level unlock" : "Optional"}
                       </p>
                     </div>
-                    {activity.html_url && (
-                      <div className="rounded-xl border border-teal-300/30 bg-white/5 p-4">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className="text-sm font-semibold text-teal-100">HTML Activity Content</p>
-                          <Link
-                            href={activity.html_url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-xs font-semibold text-teal-200 underline"
-                          >
-                            Open in new tab
-                          </Link>
-                        </div>
-                        <HtmlActivityFrame
-                          htmlUrl={activity.html_url}
-                          title={`Activity HTML ${activity.title}`}
-                          className="mt-3 h-[420px] w-full rounded-lg border border-teal-300/30 bg-white"
-                          sandbox="allow-scripts allow-same-origin"
-                        />
-                      </div>
-                    )}
+{activity.html_url && (
+                       <div className="rounded-xl border border-teal-300/30 bg-white/5 p-4">
+                         <div className="flex flex-wrap items-center justify-between gap-2">
+                           <p className="text-sm font-semibold text-teal-100">HTML Activity Content</p>
+                           <Link
+                             href={activity.html_url}
+                             target="_blank"
+                             rel="noreferrer"
+                             className="text-xs font-semibold text-teal-200 underline"
+                           >
+                             Open in new tab
+                           </Link>
+                         </div>
+                         <HtmlActivityFrame
+                           activityId={activity.id}
+                           title={`Activity HTML ${activity.title}`}
+                           className="mt-3 h-[420px] w-full rounded-lg border border-teal-300/30 bg-white"
+                           sandbox="allow-scripts allow-same-origin"
+                         />
+                       </div>
+                     )}
                     {items.length > 0 && (
                       <ActivityPlayerWrapper
                         levelNumber={levelNumber}

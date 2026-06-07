@@ -308,17 +308,17 @@ export function ActivityEditorPanel({ activity, levelNumber, levelTitle }: Props
 
         {htmlUploadError && <p className="teacher-alert teacher-alert--error">{htmlUploadError}</p>}
 
-        {htmlUrl ? (
-          <div className="teacher-panel-soft p-3">
-            <p className="teacher-label mb-2">Preview</p>
-            <HtmlActivityFrame
-              htmlUrl={htmlUrl}
-              title="Activity HTML Preview"
-              className="h-96 w-full rounded-lg border border-slate-200 bg-white"
-              sandbox="allow-scripts"
-            />
-          </div>
-        ) : (
+{htmlUrl ? (
+           <div className="teacher-panel-soft p-3">
+             <p className="teacher-label mb-2">Preview</p>
+             <HtmlActivityFrame
+               activityId={activity.id}
+               title="Activity HTML Preview"
+               className="h-96 w-full rounded-lg border border-slate-200 bg-white"
+               sandbox="allow-scripts"
+             />
+           </div>
+         ) : (
           <p className="teacher-helper">No HTML uploaded yet.</p>
         )}
       </article>

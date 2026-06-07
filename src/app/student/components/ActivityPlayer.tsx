@@ -416,16 +416,16 @@ export function LevelEntryCards({ levelNumber, lessonCount, lessonResourceUrl, a
             </button>
 
             <div ref={activityContentRef} className="flex-1">
-              {activeActivity.html_url ? (
-                  <HtmlActivityFrame
-                    htmlUrl={activeActivity.html_url}
-                    title={`Activity HTML ${activeActivity.displayTitle}`}
-                    className="h-full w-full bg-white"
-                    sandbox="allow-scripts allow-same-origin"
-                    expectedActivityId={activeActivity.id}
-                    sessionId={activeActivity.sessionId}
-                    resultRequestToken={resultRequestToken}
-                    onGameResult={(result) => {
+{activeActivity.html_url ? (
+                   <HtmlActivityFrame
+                     activityId={activeActivity.id}
+                     title={`Activity HTML ${activeActivity.displayTitle}`}
+                     className="h-full w-full bg-white"
+                     sandbox="allow-scripts allow-same-origin"
+                     expectedActivityId={activeActivity.id}
+                     sessionId={activeActivity.sessionId}
+                     resultRequestToken={resultRequestToken}
+                     onGameResult={(result) => {
                       if (result.sessionId && result.sessionId !== activeActivity.sessionId) {
                         return;
                       }
