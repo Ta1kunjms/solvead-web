@@ -37,6 +37,15 @@ type AttemptRecord = {
     size_bytes: number | null
     uploaded_at: string | null
   }
+  screenshot_url?: string | null
+  text_response?: string | null
+  activities?: {
+    id: string
+    title: string
+    activity_type: string
+    output_type: string
+    button_label: string
+  } | null
 }
 
 type TeacherNotification = {
@@ -824,28 +833,76 @@ export default function StudentManagementClient() {
                                       </span>
                                     </div>
                                     <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                                      <span
-                                        className={`rounded-full px-2 py-1 font-semibold ${
-                                          attempt.screenshot.available
-                                            ? "bg-emerald-100 text-emerald-800"
-                                            : "bg-slate-100 text-slate-500"
-                                        }`}
-                                      >
-                                        {attempt.screenshot.available ? "Screenshot available" : "No screenshot"}
+                                      <span className="rounded-full bg-slate-100 text-slate-700 px-2 py-1 font-semibold">
+                                        Type: {attempt.activities?.activity_type || "HTML"}
                                       </span>
-                                      {attempt.screenshot.available ? (
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            void openScreenshotPreview(student.student_id, attempt.id)
-                                          }}
-                                          disabled={previewAttemptId === attempt.id}
-                                          className="rounded-full border border-teal-300/40 bg-teal-400/10 px-2 py-1 font-semibold text-teal-700 transition hover:bg-teal-400/20 disabled:cursor-wait disabled:opacity-60"
-                                        >
-                                          {previewAttemptId === attempt.id ? "Opening..." : "View Screenshot"}
-                                        </button>
-                                      ) : null}
+
+                                      {attempt.activities?.output_type === "photo" && (
+                                        <>
+                                          <span
+                                            className={`rounded-full px-2 py-1 font-semibold ${
+                                              attempt.screenshot.available
+                                                ? "bg-emerald-100 text-emerald-800"
+                                                : "bg-slate-100 text-slate-500"
+                                            }`}
+                                          >
+                                            {attempt.screenshot.available ? "Photo available" : "No photo"}
+                                          </span>
+                                          {attempt.screenshot.available && (
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                void openScreenshotPreview(student.student_id, attempt.id)
+                                              }}
+                                              disabled={previewAttemptId === attempt.id}
+                                              className="rounded-full border border-teal-300/40 bg-teal-400/10 px-2 py-1 font-semibold text-teal-700 transition hover:bg-teal-400/20 disabled:cursor-wait disabled:opacity-60"
+                                            >
+                                              {previewAttemptId === attempt.id ? "Opening..." : "View Photo"}
+                                            </button>
+                                          )}
+                                        </>
+                                      )}
+
+                                      {attempt.activities?.output_type === "file" && (
+                                        <>
+                                          <span
+                                            className={`rounded-full px-2 py-1 font-semibold ${
+                                              attempt.screenshot_url
+                                                ? "bg-indigo-100 text-indigo-800"
+                                                : "bg-slate-100 text-slate-500"
+                                            }`}
+                                          >
+                                            {attempt.screenshot_url ? "File uploaded" : "No file"}
+                                          </span>
+                                          {attempt.screenshot_url && (
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                void openScreenshotPreview(student.student_id, attempt.id)
+                                              }}
+                                              disabled={previewAttemptId === attempt.id}
+                                              className="rounded-full border border-indigo-300/40 bg-indigo-400/10 px-2 py-1 font-semibold text-indigo-700 transition hover:bg-indigo-400/20 disabled:cursor-wait disabled:opacity-60"
+                                            >
+                                              {previewAttemptId === attempt.id ? "Opening..." : "Download File"}
+                                            </button>
+                                          )}
+                                        </>
+                                      )}
+
+                                      {attempt.activities?.output_type === "text" && (
+                                        <span className="rounded-full bg-amber-100 text-amber-800 px-2 py-1 font-semibold">
+                                          Text response
+                                        </span>
+                                      )}
                                     </div>
+
+                                    {attempt.activities?.output_type === "text" && attempt.text_response && (
+                                      <div className="mt-2 bg-slate-50 border border-slate-200 rounded p-2.5 text-xs text-slate-800 whitespace-pre-wrap">
+                                        <strong>Student Response:</strong>
+                                        <p className="mt-1">{attempt.text_response}</p>
+                                      </div>
+                                    )}
+
                                     <p className="text-xs text-slate-600 mt-1">
                                       Score: {attempt.score_percent ?? "-"}%
                                       {typeof attempt.score === "number" && typeof attempt.max_score === "number"

@@ -48,19 +48,11 @@ async function verifyActivityAccess(
 ) {
   const { data: activity } = await supabase
     .from("activities")
-    .select("id, created_by")
+    .select("id")
     .eq("id", activityId)
     .maybeSingle()
 
-  if (!activity) {
-    return false
-  }
-
-  if (activity.created_by && activity.created_by !== userId) {
-    return false
-  }
-
-  return true
+  return !!activity;
 }
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<Params> }) {

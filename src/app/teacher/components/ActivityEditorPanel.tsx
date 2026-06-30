@@ -10,11 +10,13 @@ type Activity = {
   title: string
   instructions: string | null
   html_url: string | null
-  activity_type: "quiz" | "problem_solving" | "reflection" | "mixed"
+  activity_type: "quiz" | "graded" | "motivation" | "reading" | "reference" | "game" | "other" | "problem_solving" | "reflection" | "mixed"
   passing_score: number
   is_required: boolean
   is_published: boolean
   sort_order: number
+  output_type: "none" | "photo" | "file" | "text"
+  button_label: string
 }
 
 type Props = {
@@ -33,12 +35,15 @@ export function ActivityEditorPanel({ activity, levelNumber, levelTitle }: Props
     is_required: activity.is_required,
     is_published: activity.is_published,
     sort_order: activity.sort_order,
+    output_type: activity.output_type ?? "none",
+    button_label: activity.button_label ?? "Open Activity",
   })
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [htmlUrl, setHtmlUrl] = useState<string | null>(activity.html_url ?? null)
   const [htmlFile, setHtmlFile] = useState<File | null>(null)
   const [isUploadingHtml, setIsUploadingHtml] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
   const [htmlUploadError, setHtmlUploadError] = useState<string | null>(null)
 
   const saveActivity = async () => {
@@ -101,25 +106,78 @@ export function ActivityEditorPanel({ activity, levelNumber, levelTitle }: Props
 
     setIsUploadingHtml(true)
     setHtmlUploadError(null)
+    setUploadProgress(0)
 
     try {
-      const formData = new FormData()
-      formData.append("file", htmlFile)
-
-      const response = await fetch(`/api/teacher/activities/${activity.id}/html`, {
+      // Step A: Get presigned URL from server
+      setUploadProgress(0)
+      const presignResponse = await fetch(`/api/teacher/activities/${activity.id}/html/presign`, {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fileName: htmlFile.name,
+          fileSize: htmlFile.size,
+          fileType: htmlFile.type || "application/octet-stream",
+        }),
       })
 
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}))
-        setHtmlUploadError(body.error || `Upload failed (HTTP ${response.status})`)
+      if (!presignResponse.ok) {
+        const body = await presignResponse.json().catch(() => ({}))
+        setHtmlUploadError(body.error || `Failed to initialize upload (HTTP ${presignResponse.status})`)
         return
       }
 
-      const body = await response.json()
-      setHtmlUrl(body.html_url || null)
+      const { presignedUrl, storagePath } = await presignResponse.json()
+
+      // Step B: Upload file directly to Supabase Storage via presigned URL
+      const uploadResult = await new Promise<{ ok: boolean; statusText: string }>((resolve) => {
+        const xhr = new XMLHttpRequest()
+        xhr.open("PUT", presignedUrl)
+        xhr.setRequestHeader("Content-Type", htmlFile.type || "application/octet-stream")
+        xhr.setRequestHeader("x-upsert", "true")
+
+        xhr.upload.addEventListener("progress", (event: ProgressEvent) => {
+          if (event.lengthComputable) {
+            const progress = Math.round((event.loaded / event.total) * 100)
+            setUploadProgress(progress)
+          }
+        })
+
+        xhr.addEventListener("load", () => {
+          resolve({ ok: xhr.status >= 200 && xhr.status < 300, statusText: xhr.statusText })
+        })
+
+        xhr.addEventListener("error", () => {
+          resolve({ ok: false, statusText: "Network error" })
+        })
+
+        xhr.send(htmlFile)
+      })
+
+      if (!uploadResult.ok) {
+        setHtmlUploadError(`Upload failed: ${uploadResult.statusText}`)
+        return
+      }
+
+      setUploadProgress(100)
+
+      // Step C: Confirm upload and process on server
+      const confirmResponse = await fetch(`/api/teacher/activities/${activity.id}/html/confirm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storagePath }),
+      })
+
+      if (!confirmResponse.ok) {
+        const body = await confirmResponse.json().catch(() => ({}))
+        setHtmlUploadError(body.error || `Failed to process upload (HTTP ${confirmResponse.status})`)
+        return
+      }
+
+      const confirmData = await confirmResponse.json()
+      setHtmlUrl(confirmData.htmlUrl || null)
       setHtmlFile(null)
+      setUploadProgress(0)
     } catch (err) {
       setHtmlUploadError(err instanceof Error ? err.message : "Unknown error")
     } finally {
@@ -198,7 +256,7 @@ export function ActivityEditorPanel({ activity, levelNumber, levelTitle }: Props
           />
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <div>
             <label className="teacher-label">Type</label>
             <select
@@ -207,13 +265,47 @@ export function ActivityEditorPanel({ activity, levelNumber, levelTitle }: Props
               className="teacher-select"
             >
               <option value="quiz">Quiz</option>
+              <option value="graded">Graded</option>
+              <option value="game">Game</option>
+              <option value="motivation">Motivation</option>
+              <option value="reading">Reading</option>
+              <option value="reference">Reference</option>
               <option value="problem_solving">Problem Solving</option>
               <option value="reflection">Reflection</option>
               <option value="mixed">Mixed</option>
+              <option value="other">Other</option>
             </select>
           </div>
+
           <div>
-            <label className="teacher-label">Passing Score</label>
+            <label className="teacher-label">Student Output Type</label>
+            <select
+              value={form.output_type}
+              onChange={(e) => setForm({ ...form, output_type: e.target.value as Activity["output_type"] })}
+              className="teacher-select"
+            >
+              <option value="none">None (no submission required)</option>
+              <option value="photo">Photo Upload</option>
+              <option value="file">File Upload</option>
+              <option value="text">Text Response</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="teacher-label">Button Label</label>
+            <input
+              type="text"
+              maxLength={50}
+              value={form.button_label}
+              onChange={(e) => setForm({ ...form, button_label: e.target.value })}
+              className="teacher-input"
+            />
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div>
+            <label className="teacher-label">Passing Score (%)</label>
             <input
               type="number"
               min="0"
@@ -233,7 +325,7 @@ export function ActivityEditorPanel({ activity, levelNumber, levelTitle }: Props
               className="teacher-input"
             />
           </div>
-          <div className="flex items-end gap-2">
+          <div className="flex items-end gap-2 pb-2">
             <label className="teacher-chip">
               <input
                 type="checkbox"
@@ -294,6 +386,14 @@ export function ActivityEditorPanel({ activity, levelNumber, levelTitle }: Props
             >
               {isUploadingHtml ? "Uploading..." : "Upload HTML"}
             </button>
+            {isUploadingHtml && uploadProgress > 0 && (
+              <div className="w-full bg-slate-200 rounded-full h-2 mt-2 overflow-hidden">
+                <div
+                  className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${uploadProgress}%` }}
+                />
+              </div>
+            )}
             {htmlUrl && (
               <button
                 onClick={removeHtml}

@@ -8,11 +8,13 @@ type Params = {
 type ActivityPayload = {
   title?: string
   instructions?: string | null
-  activity_type?: "quiz" | "problem_solving" | "reflection" | "mixed"
+  activity_type?: "quiz" | "graded" | "motivation" | "reading" | "reference" | "game" | "other" | "problem_solving" | "reflection" | "mixed"
   passing_score?: number
   is_required?: boolean
   is_published?: boolean
   sort_order?: number
+  output_type?: "none" | "photo" | "file" | "text"
+  button_label?: string
 }
 
 async function requireTeacher() {
@@ -44,21 +46,26 @@ async function verifyActivityAccess(
   activityId: string,
   userId: string,
 ) {
-  const { data: activity } = await supabase
-    .from("activities")
-    .select("id, created_by")
-    .eq("id", activityId)
-    .maybeSingle()
+  const MAX_RETRIES = 3;
+  const DELAY_MS = 150;
 
-  if (!activity) {
-    return false
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    const { data, error } = await supabase
+      .from("activities")
+      .select("*")
+      .eq("id", activityId)
+      .maybeSingle();
+
+    if (data) {
+      return { activity: data, error: null };
+    }
+
+    if (attempt < MAX_RETRIES - 1) {
+      await new Promise((res) => setTimeout(res, DELAY_MS));
+    }
   }
 
-  if (activity.created_by && activity.created_by !== userId) {
-    return false
-  }
-
-  return true
+  return { activity: null, error: "Activity not found" };
 }
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<Params> }) {
@@ -74,13 +81,14 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<P
 
   const { activityId } = await params
 
-  if (!(await verifyActivityAccess(supabase, activityId, userId))) {
-    return NextResponse.json({ error: "Activity not found" }, { status: 404 })
+  const { activity, error: verifyError } = await verifyActivityAccess(supabase, activityId, userId)
+  if (!activity) {
+    return NextResponse.json({ error: verifyError || "Activity not found" }, { status: 404 })
   }
 
   const { data, error } = await supabase
     .from("activities")
-    .select("id, level_id, title, instructions, html_url, activity_type, passing_score, is_required, is_published, sort_order")
+    .select("id, level_id, title, instructions, html_url, activity_type, passing_score, is_required, is_published, sort_order, output_type, button_label")
     .eq("id", activityId)
     .maybeSingle()
 
@@ -108,11 +116,17 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   const { activityId } = await params
 
-  if (!(await verifyActivityAccess(supabase, activityId, userId))) {
-    return NextResponse.json({ error: "Activity not found" }, { status: 404 })
+  const { activity, error: verifyError } = await verifyActivityAccess(supabase, activityId, userId)
+  if (!activity) {
+    return NextResponse.json({ error: verifyError || "Activity not found" }, { status: 404 })
   }
 
   const body: ActivityPayload = await request.json().catch(() => ({}))
+
+  if (body.button_label !== undefined && body.button_label.length > 50) {
+    return NextResponse.json({ error: "button_label exceeds 50 characters" }, { status: 400 })
+  }
+
   const updates: ActivityPayload = {}
 
   if (typeof body.title === "string") updates.title = body.title.trim()
@@ -122,6 +136,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (typeof body.is_required === "boolean") updates.is_required = body.is_required
   if (typeof body.is_published === "boolean") updates.is_published = body.is_published
   if (typeof body.sort_order === "number") updates.sort_order = Math.max(1, Math.floor(body.sort_order))
+  if (typeof body.output_type === "string") updates.output_type = body.output_type
+  if (typeof body.button_label === "string") updates.button_label = body.button_label
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "No valid updates provided" }, { status: 400 })
@@ -131,7 +147,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     .from("activities")
     .update(updates)
     .eq("id", activityId)
-    .select("id, level_id, title, instructions, html_url, activity_type, passing_score, is_required, is_published, sort_order")
+    .select("id, level_id, title, instructions, html_url, activity_type, passing_score, is_required, is_published, sort_order, output_type, button_label")
     .maybeSingle()
 
   if (error) {
@@ -158,8 +174,26 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
 
   const { activityId } = await params
 
-  if (!(await verifyActivityAccess(supabase, activityId, userId))) {
-    return NextResponse.json({ error: "Activity not found" }, { status: 404 })
+  const { activity, error: verifyError } = await verifyActivityAccess(supabase, activityId, userId)
+  if (!activity) {
+    return NextResponse.json({ error: verifyError || "Activity not found" }, { status: 404 })
+  }
+
+  const HTML_BUCKET = "activity-html"
+  const prefix = `activities/${activityId}`
+
+  // 1. Remove files inside the assets folder
+  const { data: assetFiles } = await supabase.storage.from(HTML_BUCKET).list(`${prefix}/assets`)
+  if (assetFiles && assetFiles.length > 0) {
+    const assetPaths = assetFiles.map((f: any) => `${prefix}/assets/${f.name}`)
+    await supabase.storage.from(HTML_BUCKET).remove(assetPaths).catch(() => {})
+  }
+
+  // 2. Remove files inside the main prefix folder (like activity.html, zip files, etc.)
+  const { data: topFiles } = await supabase.storage.from(HTML_BUCKET).list(prefix)
+  if (topFiles && topFiles.length > 0) {
+    const topPaths = topFiles.map((f: any) => `${prefix}/${f.name}`)
+    await supabase.storage.from(HTML_BUCKET).remove(topPaths).catch(() => {})
   }
 
   const { error } = await supabase.from("activities").delete().eq("id", activityId)

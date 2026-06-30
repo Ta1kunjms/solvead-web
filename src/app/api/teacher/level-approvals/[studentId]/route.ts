@@ -71,7 +71,14 @@ export async function GET(request: NextRequest, { params }: Params) {
       screenshot_mime_type,
       screenshot_size_bytes,
       screenshot_uploaded_at,
-      activities:activities(title)
+      text_response,
+      activities:activities(
+        id,
+        title,
+        activity_type,
+        output_type,
+        button_label
+      )
     `)
     .eq("student_id", studentId)
     .not("submitted_at", "is", null)
@@ -82,8 +89,8 @@ export async function GET(request: NextRequest, { params }: Params) {
     return NextResponse.json({ error: attemptsError.message }, { status: 500 })
   }
 
-  const formattedAttempts = (attempts ?? []).map((attempt: Record<string, unknown>) => {
-    const activity = attempt.activities as { title: string } | null
+  const formattedAttempts = (attempts ?? []).map((attempt: Record<string, any>) => {
+    const activity = attempt.activities as { id: string; title: string; activity_type: string; output_type: string; button_label: string } | null
     const score = attempt.score as number | null
     const maxScore = attempt.max_score as number | null
     const scorePercent = maxScore && maxScore > 0 && score !== null ? Math.round((score / maxScore) * 100) : null
@@ -103,6 +110,9 @@ export async function GET(request: NextRequest, { params }: Params) {
         size_bytes: attempt.screenshot_size_bytes,
         uploaded_at: attempt.screenshot_uploaded_at,
       },
+      screenshot_url: attempt.screenshot_path,
+      text_response: attempt.text_response,
+      activities: activity,
     }
   })
 

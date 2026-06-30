@@ -15,24 +15,35 @@ export async function applyPassedActivityOutcome({
   pointsAwarded,
   scorePercent,
 }: ApplyPassedActivityOutcomeParams) {
-  const pointsReason = `Completed activity: ${activityId}`;
-  const { data: existingPointsReward } = await supabase
-    .from("user_rewards")
-    .select("id")
-    .eq("user_id", userId)
-    .eq("reward_type", "points")
-    .eq("reason", pointsReason)
-    .limit(1)
+  const { data: activity } = await supabase
+    .from("activities")
+    .select("activity_type")
+    .eq("id", activityId)
     .maybeSingle();
 
-  if (!existingPointsReward) {
-    await supabase.from("user_rewards").insert({
-      user_id: userId,
-      level_id: levelId,
-      reward_type: "points",
-      points: Math.max(0, Math.round(pointsAwarded)),
-      reason: pointsReason,
-    });
+  const UNGRADED_TYPES = ["motivation", "reading", "reference"];
+  const isUngraded = UNGRADED_TYPES.includes(activity?.activity_type ?? "");
+
+  if (!isUngraded) {
+    const pointsReason = `Completed activity: ${activityId}`;
+    const { data: existingPointsReward } = await supabase
+      .from("user_rewards")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("reward_type", "points")
+      .eq("reason", pointsReason)
+      .limit(1)
+      .maybeSingle();
+
+    if (!existingPointsReward) {
+      await supabase.from("user_rewards").insert({
+        user_id: userId,
+        level_id: levelId,
+        reward_type: "points",
+        points: Math.max(0, Math.round(pointsAwarded)),
+        reason: pointsReason,
+      });
+    }
   }
 
   const { data: levelData } = await supabase
@@ -86,7 +97,7 @@ export async function applyPassedActivityOutcome({
     .maybeSingle();
 
   const previousBest = typeof currentProgress?.best_score === "number" ? currentProgress.best_score : null;
-  const incomingBest = typeof scorePercent === "number" ? Math.max(0, Math.min(100, Math.round(scorePercent))) : null;
+  const incomingBest = isUngraded ? null : (typeof scorePercent === "number" ? Math.max(0, Math.min(100, Math.round(scorePercent))) : null);
   const bestScore =
     incomingBest === null
       ? previousBest

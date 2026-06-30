@@ -12,6 +12,8 @@ type ActivitySummary = {
   instructions: string | null;
   html_url: string | null;
   activity_type: string | null;
+  output_type: string | null;
+  button_label: string | null;
 };
 
 type Copy = {
@@ -81,6 +83,7 @@ export function LevelEntryCards({ levelNumber, lessonCount, lessonResourceUrl, a
   const [attemptError, setAttemptError] = useState<string | null>(null);
   const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
   const [screenshotPreviewUrl, setScreenshotPreviewUrl] = useState<string | null>(null);
+  const [textResponse, setTextResponse] = useState("");
   const titleId = useId();
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const activityContentRef = useRef<HTMLDivElement | null>(null);
@@ -139,33 +142,36 @@ export function LevelEntryCards({ levelNumber, lessonCount, lessonResourceUrl, a
     setScreenshotFile(null);
     setScreenshotPreviewUrl(null);
     setShowScreenshotModal(false);
-  };
+    setTextResponse("");
+  };;
+
+  const UNGRADED_TYPES = ["motivation", "reading", "reference"];
 
   const handleCloseFromButton = async () => {
     if (!activeActivity || isClosingFromX) {
       return;
     }
 
-    const sessionId = activeActivity.sessionId;
-    const alreadySubmitted = submittedSessions.current.has(sessionId);
+    const outputType = activeActivity.output_type ?? "none";
+    const activityType = activeActivity.activity_type ?? "";
+    const isUngraded = UNGRADED_TYPES.includes(activityType);
 
-    if (alreadySubmitted) {
-      closeWithoutFetch();
+    // For ungraded activities with no output, auto-submit immediately
+    if (isUngraded && outputType === "none") {
+      await submitHtmlResult(activeActivity, null, null, null);
       return;
     }
 
-    // Actively request the latest result from the iframe. This catches xAPI
-    // events that fired before the parent attached to the H5P dispatcher and
-    // re-polls the H5P instance state synchronously.
-    htmlFrameRef.current?.requestLatestResult();
-
-    // Wait a moment for the request to be processed (H5P's getXAPIData is
-    // synchronous, but the solvead:request-result postMessage is async).
-    await new Promise((resolve) => window.setTimeout(resolve, 200));
-
-    const latestResult = pendingGameResultRef.current;
-    if (!latestResult || latestResult.activityId !== activeActivity.id) {
-      setAttemptError("No game result detected yet. Complete the activity before submitting.");
+    // For all others, open the submission modal
+    if (!isUngraded) {
+      htmlFrameRef.current?.requestLatestResult();
+      await new Promise((resolve) => window.setTimeout(resolve, 200));
+      const latestResult = pendingGameResultRef.current;
+      if (!latestResult || latestResult.activityId !== activeActivity.id) {
+        setAttemptError("No game result detected yet. Complete the activity before submitting.");
+      } else {
+        setAttemptError(null);
+      }
     } else {
       setAttemptError(null);
     }
@@ -173,44 +179,43 @@ export function LevelEntryCards({ levelNumber, lessonCount, lessonResourceUrl, a
     setShowScreenshotModal(true);
   };
 
-  const handleScreenshotSubmit = async () => {
-    if (!activeActivity || !screenshotFile) {
-      setAttemptError("Screenshot is required");
-      return;
-    }
-
-    const screenshotValidation = await validateScreenshotFile(screenshotFile);
-    if ("error" in screenshotValidation) {
-      setAttemptError(screenshotValidation.error);
-      return;
-    }
-
-    // Last-chance poll: re-request the latest result from the iframe in case
-    // the user spent time picking a screenshot and the game result just
-    // arrived (or H5P only had a result when queried directly).
-    htmlFrameRef.current?.requestLatestResult();
-    await new Promise((resolve) => window.setTimeout(resolve, 200));
-
-    const sessionId = activeActivity.sessionId;
+  // Shared submission helper used by all output types + ungraded
+  const submitHtmlResult = async (
+    activity: ActiveActivity,
+    screenshot: File | null,
+    textResp: string | null,
+    submissionFile: File | null,
+  ) => {
+    const outputType = activity.output_type ?? "none";
+    const activityType = activity.activity_type ?? "";
+    const isUngraded = UNGRADED_TYPES.includes(activityType);
+    const sessionId = activity.sessionId;
     const latestResult = pendingGameResultRef.current;
 
-    if (!latestResult || latestResult.activityId !== activeActivity.id) {
+    // Graded activities must have a game result
+    if (!isUngraded && (!latestResult || latestResult.activityId !== activity.id)) {
       setAttemptError("No game result detected. Complete the activity before submitting.");
       return;
     }
 
     setIsClosingFromX(true);
+    try {
+      const formData = new FormData();
+      formData.append("activity_id", activity.id);
+      formData.append("session_id", sessionId);
+      formData.append("score", String(isUngraded ? 100 : (latestResult?.score ?? 0)));
+      formData.append("max_score", String(isUngraded ? 100 : (latestResult?.maxScore ?? 100)));
+      formData.append("points", String(isUngraded ? 0 : (latestResult?.points ?? 0)));
+      formData.append("stars", String(isUngraded ? 0 : (latestResult?.stars ?? 0)));
+      formData.append("passed", isUngraded ? "1" : String(latestResult?.passed ? 1 : 0));
 
-try {
-       const formData = new FormData();
-       formData.append("activity_id", activeActivity.id);
-       formData.append("session_id", sessionId);
-       formData.append("score", String(latestResult?.score ?? 0));
-       formData.append("max_score", String(latestResult?.maxScore ?? 0));
-       formData.append("points", String(latestResult?.points ?? 0));
-       formData.append("stars", String(latestResult?.stars ?? 0));
-       formData.append("passed", String(latestResult?.passed ? 1 : 0));
-       formData.append("screenshot", screenshotFile);
+      if (outputType === "photo" && screenshot) {
+        formData.append("screenshot", screenshot);
+      } else if (outputType === "text" && textResp) {
+        formData.append("text_response", textResp);
+      } else if (outputType === "file" && submissionFile) {
+        formData.append("submission_file", submissionFile);
+      }
 
       const response = await fetch("/api/activities/submit-html-result", {
         method: "POST",
@@ -229,6 +234,32 @@ try {
       setAttemptError("Failed to submit activity result");
     } finally {
       setIsClosingFromX(false);
+    }
+  };
+
+  const handleModalSubmit = async () => {
+    if (!activeActivity) return;
+    const outputType = activeActivity.output_type ?? "none";
+    const activityType = activeActivity.activity_type ?? "";
+    const isUngraded = UNGRADED_TYPES.includes(activityType);
+
+    if (!isUngraded) {
+      // Last-chance poll
+      htmlFrameRef.current?.requestLatestResult();
+      await new Promise((resolve) => window.setTimeout(resolve, 200));
+    }
+
+    if (outputType === "photo") {
+      if (!screenshotFile) { setAttemptError("Screenshot is required"); return; }
+      const val = await validateScreenshotFile(screenshotFile);
+      if ("error" in val) { setAttemptError(val.error); return; }
+      await submitHtmlResult(activeActivity, screenshotFile, null, null);
+    } else if (outputType === "text") {
+      if (!textResponse.trim()) { setAttemptError("Please enter your response"); return; }
+      await submitHtmlResult(activeActivity, null, textResponse, null);
+    } else {
+      // none or file (file handled separately) — just submit
+      await submitHtmlResult(activeActivity, null, null, null);
     }
   };
 
@@ -407,7 +438,12 @@ try {
             <div className="border-t border-white/10 bg-slate-950/70 px-4 py-4 sm:px-6">
               <div className="mx-auto flex w-full max-w-4xl items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-3">
                 <div>
-                  {pendingGameResult ? (
+                  {UNGRADED_TYPES.includes(activeActivity.activity_type ?? "") ? (
+                    <>
+                      <p className="text-sm font-semibold text-teal-100">Finished reading?</p>
+                      <p className="text-xs text-white/70">Mark as completed when you&apos;re done.</p>
+                    </>
+                  ) : pendingGameResult ? (
                     <>
                       <p className="text-sm font-semibold text-emerald-100">
                         Score: {pendingGameResult.score}/{pendingGameResult.maxScore}
@@ -420,35 +456,18 @@ try {
                     <>
                       <p className="text-sm font-semibold text-teal-100">Finished the activity?</p>
                       <p className="text-xs text-white/70">
-                        Submit when you&apos;re done. Your teacher will review the screenshot.
+                        Submit when you&apos;re done. Your teacher will review.
                       </p>
                     </>
                   )}
                 </div>
                 <button
                   type="button"
-                  onClick={() => {
-                    void handleCloseFromButton();
-                  }}
+                  onClick={() => { void handleCloseFromButton(); }}
                   disabled={isClosingFromX}
                   className="rounded-lg border border-teal-300/40 bg-teal-400/10 px-4 py-2 text-sm font-semibold text-teal-100 transition hover:scale-105 hover:bg-teal-400/30 active:scale-95 disabled:opacity-60"
                 >
-                  <span className="flex items-center gap-2">
-                    <svg
-                      viewBox="0 0 24 24"
-                      aria-hidden="true"
-                      className="h-4 w-4"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M6 6l12 12" />
-                      <path d="M18 6l-12 12" />
-                    </svg>
-                    {isClosingFromX ? "Submitting..." : "Submit Activity"}
-                  </span>
+                  {isClosingFromX ? "Submitting..." : (activeActivity.button_label || "Submit Activity")}
                 </button>
               </div>
             </div>
@@ -457,43 +476,46 @@ try {
               <div className="absolute inset-0 z-60 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm">
                 <div className="w-full max-w-md rounded-2xl border border-white/20 bg-slate-900/95 p-6 shadow-2xl">
                   <h3 className="text-lg font-semibold text-white">Submit Activity Result</h3>
-                  <p className="mt-2 text-sm text-white/70">
-                    Select a screenshot for your teacher to review.
-                  </p>
-                  <div className="mt-6">
-                    <label className="block text-sm font-medium text-teal-100">
-                      Screenshot (JPG, PNG, WEBP)
-                    </label>
-                    {screenshotPreviewUrl ? (
-                      <div className="mt-2 overflow-hidden rounded-lg border border-white/10 bg-slate-950/60">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={screenshotPreviewUrl}
-                          alt="Selected screenshot preview"
-                          className="block max-h-56 w-full object-contain"
-                        />
-                      </div>
-                    ) : null}
-                    <input
-                      type="file"
-                      accept={SCREENSHOT_ACCEPT}
-                      onChange={(event) => {
-                        const file = event.target.files?.[0] ?? null;
-                        setScreenshotFile(file);
-                        if (screenshotPreviewUrl) {
-                          URL.revokeObjectURL(screenshotPreviewUrl);
-                        }
-                        setScreenshotPreviewUrl(file ? URL.createObjectURL(file) : null);
-                        if (attemptError) {
-                          setAttemptError(null);
-                        }
-                      }}
-                      className="mt-2 block w-full rounded-md border border-white/10 bg-slate-900/80 px-3 py-2 text-sm text-white file:mr-4 file:rounded-md file:border-0 file:bg-teal-400/20 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-teal-100"
-                    />
-                    <p className="mt-2 text-xs text-white/60">
-                      {screenshotFile ? `Selected: ${screenshotFile.name}` : "No screenshot selected"}
-                    </p>
-                  </div>
+
+                  {activeActivity.output_type === "text" ? (
+                    <div className="mt-4">
+                      <label className="block text-sm font-medium text-teal-100">Your Response</label>
+                      <textarea
+                        rows={5}
+                        value={textResponse}
+                        onChange={(e) => { setTextResponse(e.target.value); setAttemptError(null); }}
+                        placeholder="Type your response here..."
+                        className="mt-2 block w-full rounded-md border border-white/10 bg-slate-900/80 px-3 py-2 text-sm text-white placeholder-white/30"
+                      />
+                    </div>
+                  ) : activeActivity.output_type === "photo" ? (
+                    <div className="mt-4">
+                      <p className="mt-1 text-sm text-white/70">Select a screenshot for your teacher to review.</p>
+                      <label className="mt-4 block text-sm font-medium text-teal-100">Screenshot (JPG, PNG, WEBP)</label>
+                      {screenshotPreviewUrl ? (
+                        <div className="mt-2 overflow-hidden rounded-lg border border-white/10 bg-slate-950/60">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={screenshotPreviewUrl} alt="Selected screenshot preview" className="block max-h-56 w-full object-contain" />
+                        </div>
+                      ) : null}
+                      <input
+                        type="file"
+                        accept={SCREENSHOT_ACCEPT}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0] ?? null;
+                          setScreenshotFile(file);
+                          if (screenshotPreviewUrl) URL.revokeObjectURL(screenshotPreviewUrl);
+                          setScreenshotPreviewUrl(file ? URL.createObjectURL(file) : null);
+                          if (attemptError) setAttemptError(null);
+                        }}
+                        className="mt-2 block w-full rounded-md border border-white/10 bg-slate-900/80 px-3 py-2 text-sm text-white file:mr-4 file:rounded-md file:border-0 file:bg-teal-400/20 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-teal-100"
+                      />
+                      <p className="mt-2 text-xs text-white/60">{screenshotFile ? `Selected: ${screenshotFile.name}` : "No screenshot selected"}</p>
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-sm text-white/70">Click Submit to mark this activity as completed.</p>
+                  )}
+
                   {attemptError && (
                     <p className="mt-3 rounded-lg border border-amber-300/40 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">
                       {attemptError}
@@ -502,9 +524,7 @@ try {
                   <div className="mt-6 flex gap-3">
                     <button
                       type="button"
-                      onClick={() => {
-                        setShowScreenshotModal(false)
-                      }}
+                      onClick={() => { setShowScreenshotModal(false); }}
                       disabled={isClosingFromX}
                       className="flex-1 rounded-lg border border-white/20 px-4 py-2 text-sm font-medium text-white transition hover:scale-105 hover:bg-white/10 active:scale-95 disabled:opacity-60"
                     >
@@ -512,10 +532,8 @@ try {
                     </button>
                     <button
                       type="button"
-                      onClick={() => {
-                        void handleScreenshotSubmit()
-                      }}
-                      disabled={isClosingFromX || !screenshotFile}
+                      onClick={() => { void handleModalSubmit(); }}
+                      disabled={isClosingFromX}
                       className="flex-1 rounded-lg bg-teal-500 px-4 py-2 text-sm font-semibold text-white transition hover:scale-105 hover:bg-teal-600 active:scale-95 disabled:opacity-60"
                     >
                       {isClosingFromX ? "Submitting..." : "Submit"}

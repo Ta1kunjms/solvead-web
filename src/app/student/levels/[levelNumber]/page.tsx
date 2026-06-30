@@ -21,6 +21,8 @@ type ActivitySummary = {
   instructions: string | null;
   html_url: string | null;
   activity_type: string | null;
+  output_type: string | null;
+  button_label: string | null;
 };
 
 type ProgressRecord = {
@@ -74,7 +76,7 @@ export default async function StudentLevelEntryPage({ params }: { params: Promis
       .order("sort_order", { ascending: true }),
     supabase
       .from("activities")
-      .select("id, title, instructions, html_url, activity_type, levels!inner(level_number)")
+      .select("id, title, instructions, html_url, activity_type, output_type, button_label, levels!inner(level_number)")
       .eq("levels.level_number", levelNumber)
       .eq("is_published", true)
       .order("sort_order", { ascending: true }),

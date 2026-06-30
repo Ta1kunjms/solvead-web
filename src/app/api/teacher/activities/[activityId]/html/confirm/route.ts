@@ -7,7 +7,6 @@ type Params = {
 };
 
 const HTML_BUCKET = "activity-html";
-const MAX_FILE_SIZE = 200_000_000;
 
 async function requireTeacher() {
   const supabase = await getSupabaseServerClient();
@@ -74,16 +73,42 @@ function findMainHtml(zip: AdmZip): { entry: AdmZip.IZipEntry; content: string }
   return { entry: best, content: best.getData().toString("utf-8") };
 }
 
+function getContentType(filename: string): string {
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  const types: Record<string, string> = {
+    ogg: "audio/ogg",
+    mp3: "audio/mpeg",
+    wav: "audio/wav",
+    mp4: "video/mp4",
+    webm: "video/webm",
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    gif: "image/gif",
+    svg: "image/svg+xml",
+    webp: "image/webp",
+    css: "text/css",
+    js: "application/javascript",
+    json: "application/json",
+    html: "text/html; charset=utf-8",
+    htm: "text/html; charset=utf-8",
+    woff: "font/woff",
+    woff2: "font/woff2",
+    ttf: "font/ttf",
+    eot: "application/vnd.ms-fontobject",
+    txt: "text/plain",
+    pdf: "application/pdf",
+    zip: "application/zip",
+  };
+  return types[ext] ?? "application/octet-stream";
+}
+
 export async function POST(request: NextRequest, { params }: { params: Promise<Params> }) {
   const auth = await requireTeacher();
-  if (auth.error) {
-    return auth.error;
-  }
+  if (auth.error) return auth.error;
 
   const { supabase, userId } = auth;
-  if (!supabase) {
-    return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
-  }
+  if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
 
   const { activityId } = await params;
 
@@ -91,27 +116,40 @@ export async function POST(request: NextRequest, { params }: { params: Promise<P
     return NextResponse.json({ error: "Activity not found" }, { status: 404 });
   }
 
-  const formData = await request.formData();
-  const file = formData.get("file");
-
-  if (!file || !(file instanceof File)) {
-    return NextResponse.json({ error: "File is required" }, { status: 400 });
+  let body: { storagePath?: string };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  if (file.size === 0) {
-    return NextResponse.json({ error: "File is empty" }, { status: 400 });
+  const { storagePath } = body;
+  if (!storagePath || typeof storagePath !== "string") {
+    return NextResponse.json({ error: "storagePath is required" }, { status: 400 });
   }
 
-  if (file.size > MAX_FILE_SIZE) {
-    return NextResponse.json({ error: "File exceeds 200MB" }, { status: 400 });
+  const { data: exists } = await supabase.storage
+    .from(HTML_BUCKET)
+    .exists(storagePath);
+
+  if (!exists) {
+    return NextResponse.json({ error: "Uploaded file not found in storage" }, { status: 404 });
   }
 
-  const fileName = file.name.toLowerCase();
+  const fileName = storagePath.split("/").pop()?.toLowerCase() ?? "";
+
+  await cleanOldFiles(supabase, activityId);
 
   if (fileName.endsWith(".zip")) {
-    await cleanOldFiles(supabase, activityId);
+    const { data: fileData, error: downloadError } = await supabase.storage
+      .from(HTML_BUCKET)
+      .download(storagePath);
 
-    const fileBuffer = Buffer.from(await file.arrayBuffer());
+    if (downloadError || !fileData) {
+      return NextResponse.json({ error: "Failed to download ZIP from storage" }, { status: 500 });
+    }
+
+    const fileBuffer = Buffer.from(await fileData.arrayBuffer());
     let zip: AdmZip;
     try {
       zip = new AdmZip(fileBuffer);
@@ -160,8 +198,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<P
     const results = await Promise.allSettled(uploadPromises);
     const failed = results.filter((r) => r.status === "rejected");
     if (failed.length > 0) {
-      console.error(`[upload-zip] ${failed.length} asset(s) failed to upload for activity ${activityId}`);
+      console.error(`[confirm-zip] ${failed.length} asset(s) failed to upload for activity ${activityId}`);
     }
+
+    await supabase.storage.from(HTML_BUCKET).remove([storagePath]).catch(() => {});
 
     const { error: updateError } = await supabase
       .from("activities")
@@ -173,9 +213,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<P
     }
 
     return NextResponse.json({
-      html_url: `/api/activities/${activityId}/html`,
-      assets_uploaded: entries.length - 1,
-      assets_failed: failed.length,
+      success: true,
+      htmlUrl: `/api/activities/${activityId}/html`,
     }, { status: 200 });
   }
 
@@ -183,10 +222,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<P
     return NextResponse.json({ error: "Only .html, .htm, or .zip files are supported" }, { status: 400 });
   }
 
-  await cleanOldFiles(supabase, activityId);
+  const { data: fileData, error: downloadError } = await supabase.storage
+    .from(HTML_BUCKET)
+    .download(storagePath);
+
+  if (downloadError || !fileData) {
+    return NextResponse.json({ error: "Failed to download file from storage" }, { status: 500 });
+  }
 
   const htmlPath = `activities/${activityId}/activity.html`;
-  const fileBuffer = Buffer.from(await file.arrayBuffer());
+  const fileBuffer = Buffer.from(await fileData.arrayBuffer());
 
   const { error: uploadError } = await supabase.storage
     .from(HTML_BUCKET)
@@ -200,6 +245,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<P
     return NextResponse.json({ error: uploadError.message }, { status: 500 });
   }
 
+  await supabase.storage.from(HTML_BUCKET).remove([storagePath]).catch(() => {});
+
   const { error: updateError } = await supabase
     .from("activities")
     .update({ html_url: `/api/activities/${activityId}/html` })
@@ -209,66 +256,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<P
     return NextResponse.json({ error: updateError.message }, { status: 500 });
   }
 
-  return NextResponse.json({ html_url: `/api/activities/${activityId}/html` }, { status: 200 });
-}
-
-export async function DELETE(_request: NextRequest, { params }: { params: Promise<Params> }) {
-  const auth = await requireTeacher();
-  if (auth.error) {
-    return auth.error;
-  }
-
-  const { supabase, userId } = auth;
-  if (!supabase) {
-    return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
-  }
-
-  const { activityId } = await params;
-
-  if (!(await verifyActivityAccess(supabase, activityId, userId))) {
-    return NextResponse.json({ error: "Activity not found" }, { status: 404 });
-  }
-
-  await cleanOldFiles(supabase, activityId);
-
-  const { error: updateError } = await supabase
-    .from("activities")
-    .update({ html_url: null })
-    .eq("id", activityId);
-
-  if (updateError) {
-    return NextResponse.json({ error: updateError.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ html_url: null }, { status: 200 });
-}
-
-function getContentType(filename: string): string {
-  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
-  const types: Record<string, string> = {
-    ogg: "audio/ogg",
-    mp3: "audio/mpeg",
-    wav: "audio/wav",
-    mp4: "video/mp4",
-    webm: "video/webm",
-    png: "image/png",
-    jpg: "image/jpeg",
-    jpeg: "image/jpeg",
-    gif: "image/gif",
-    svg: "image/svg+xml",
-    webp: "image/webp",
-    css: "text/css",
-    js: "application/javascript",
-    json: "application/json",
-    html: "text/html; charset=utf-8",
-    htm: "text/html; charset=utf-8",
-    woff: "font/woff",
-    woff2: "font/woff2",
-    ttf: "font/ttf",
-    eot: "application/vnd.ms-fontobject",
-    txt: "text/plain",
-    pdf: "application/pdf",
-    zip: "application/zip",
-  };
-  return types[ext] ?? "application/octet-stream";
+  return NextResponse.json({
+    success: true,
+    htmlUrl: `/api/activities/${activityId}/html`,
+  }, { status: 200 });
 }

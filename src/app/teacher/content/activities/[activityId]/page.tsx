@@ -51,7 +51,7 @@ export default async function EditActivityPage({ params }: { params: Promise<Par
 
   const { data: activity } = await supabase
     .from("activities")
-    .select("id, title, instructions, html_url, activity_type, passing_score, is_published, is_required, sort_order, level_id, levels!inner(level_number, title)")
+    .select("id, title, instructions, html_url, activity_type, passing_score, is_published, is_required, sort_order, level_id, output_type, button_label, levels!inner(level_number, title)")
     .eq("id", activityId)
     .maybeSingle();
 
@@ -91,11 +91,13 @@ export default async function EditActivityPage({ params }: { params: Promise<Par
           title: string;
           instructions: string | null;
           html_url: string | null;
-          activity_type: "quiz" | "problem_solving" | "reflection" | "mixed";
+          activity_type: "quiz" | "graded" | "motivation" | "reading" | "reference" | "game" | "other" | "problem_solving" | "reflection" | "mixed";
           passing_score: number;
           is_required: boolean;
           is_published: boolean;
           sort_order: number;
+          output_type: "none" | "photo" | "file" | "text";
+          button_label: string;
         }}
         levelNumber={levelNumber}
         levelTitle={levelTitle}

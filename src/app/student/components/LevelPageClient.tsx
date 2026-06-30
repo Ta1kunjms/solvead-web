@@ -10,6 +10,8 @@ type ActivitySummary = {
   instructions: string | null;
   html_url: string | null;
   activity_type: string | null;
+  output_type: string | null;
+  button_label: string | null;
 };
 
 type Copy = {
