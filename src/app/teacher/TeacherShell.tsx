@@ -2,7 +2,8 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type NavItem = {
   href: string;
@@ -35,7 +36,16 @@ const navItems: NavItem[] = [
 
 export function TeacherShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const isActive = (href: string) => (href === "/teacher" ? pathname === href : pathname.startsWith(href));
+
+  const handleLogout = async () => {
+    const supabase = getSupabaseBrowserClient();
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
+    router.push("/");
+  };
 
   return (
     <div className="teacher-shell">
@@ -68,6 +78,13 @@ export function TeacherShell({ children }: { children: ReactNode }) {
               })}
             </nav>
 
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="mt-auto rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700 transition hover:bg-red-100"
+            >
+              Logout
+            </button>
           </div>
         </aside>
 

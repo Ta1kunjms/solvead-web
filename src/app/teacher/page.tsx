@@ -4,6 +4,18 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { LevelsCompletedGraph } from "./components/LevelsCompletedGraph";
 import { LeaderboardWidget } from "./components/LeaderboardWidget";
 
+async function signOutTeacher() {
+  "use server";
+
+  const supabase = await getSupabaseServerClient();
+
+  if (supabase) {
+    await supabase.auth.signOut();
+  }
+
+  redirect("/");
+}
+
 type TeacherProfile = {
   first_name: string;
   last_name: string;
