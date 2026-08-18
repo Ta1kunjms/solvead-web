@@ -238,6 +238,7 @@ export default function Home() {
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
   const [leaderboardFetched, setLeaderboardFetched] = useState(false);
+  const activeSessionUserRef = useRef<string | null>(null);
   const [leaderboardExpanded, setLeaderboardExpanded] = useState(false);
   const { scale, isMobileViewport, isMobilePortrait, viewportWidth, viewportHeight } = useResponsiveScale();
 
@@ -597,17 +598,29 @@ export default function Home() {
       return;
     }
 
+    let cancelled = false;
+
     const checkSession = async () => {
       const {
         data: { session },
       } = await supabase.auth.getSession();
 
+      if (cancelled) {
+        return;
+      }
+
       if (!session?.user) {
+        activeSessionUserRef.current = null;
         setStatus("Sign in with Gmail, LRN, or email + password.");
         setStage("auth");
         return;
       }
 
+      if (activeSessionUserRef.current === session.user.id) {
+        return;
+      }
+
+      activeSessionUserRef.current = session.user.id;
       await handleSignedInUser(session.user);
     };
 
@@ -615,8 +628,9 @@ export default function Home() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       if (!session?.user) {
+        activeSessionUserRef.current = null;
         setUser(null);
         setProfile(null);
         setSelectedProfileIcon(null);
@@ -626,10 +640,17 @@ export default function Home() {
         return;
       }
 
+      if (activeSessionUserRef.current === session.user.id && event !== "SIGNED_OUT") {
+        return;
+      }
+
+      activeSessionUserRef.current = session.user.id;
       void handleSignedInUser(session.user);
     });
 
     return () => {
+      cancelled = true;
+      activeSessionUserRef.current = null;
       subscription.unsubscribe();
     };
   }, [handleSignedInUser, supabase]);
@@ -1068,6 +1089,7 @@ export default function Home() {
       return;
     }
 
+    activeSessionUserRef.current = null;
     await supabase.auth.signOut();
     setStage("auth");
     setUser(null);

@@ -4,19 +4,32 @@ import { getCopy } from "@/lib/i18n"
 import { getBaseFontSizeClass, getBrightnessMultiplier } from "@/lib/preferences"
 import { getUserPreferencesForServer } from "@/lib/preferences-server"
 import { getSupabaseServerClient } from "@/lib/supabase/server"
+import { summarizeUserRewards } from "@/lib/rewards"
 import RewardsDisplay from "../components/RewardsDisplay"
-
-type RewardRecord = {
-  points: number
-  stars: number
-  badges: string[]
-}
 
 type ProgressRow = {
   level_number: number
   completed: boolean
   best_score: number | null
   updated_at: string
+}
+
+type UserRewardRow = {
+  id: string
+  points: number | null
+  stars: number | null
+  badge_id: string | null
+  reward_type: string | null
+  reason: string | null
+  created_at: string | null
+}
+
+type BadgeRow = {
+  id: string
+  code: string
+  name: string
+  description: string | null
+  icon: string | null
 }
 
 export default async function StudentRewardsPage() {
@@ -39,8 +52,13 @@ export default async function StudentRewardsPage() {
   const baseFontSizeClass = getBaseFontSizeClass(preferences.font_size)
   const brightnessMultiplier = getBrightnessMultiplier(preferences.brightness_level)
 
-  const [{ data: rewards }, { data: progress }] = await Promise.all([
-    supabase.from("user_rewards").select("points, stars, badges").eq("user_id", user.id).maybeSingle(),
+  const [{ data: rewardRows }, { data: badgeRows }, { data: progress }] = await Promise.all([
+    supabase
+      .from("user_rewards")
+      .select("id, points, stars, badge_id, reward_type, reason, created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false }),
+    supabase.from("badges").select("id, code, name, description, icon"),
     supabase
       .from("level_progress")
       .select("level_number, completed, best_score, updated_at")
@@ -48,7 +66,11 @@ export default async function StudentRewardsPage() {
       .order("level_number", { ascending: true }),
   ])
 
-  const rewardRecord = (rewards ?? { points: 0, stars: 0, badges: [] }) as RewardRecord
+  const rewardRecord = summarizeUserRewards(
+    (rewardRows ?? []) as UserRewardRow[],
+    (badgeRows ?? []) as BadgeRow[],
+  )
+
   const progressRows = (progress ?? []) as ProgressRow[]
   const completedLevels = progressRows.filter((row) => row.completed)
   const bestScoreAverage =

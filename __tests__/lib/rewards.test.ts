@@ -1,4 +1,9 @@
-import { calculateActivityReward, calculateLevelCompletionReward, validateRewardBatch } from '../../src/lib/rewards'
+import {
+  calculateActivityReward,
+  calculateLevelCompletionReward,
+  summarizeUserRewards,
+  validateRewardBatch,
+} from '../../src/lib/rewards'
 
 describe('Reward Calculation', () => {
   describe('calculateActivityReward', () => {
@@ -107,6 +112,35 @@ describe('Reward Calculation', () => {
         reason: 'Test',
       }
       expect(validateRewardBatch(batch)).toBe(true)
+    })
+  })
+
+  describe('summarizeUserRewards', () => {
+    it('should aggregate flat-row user rewards into points, stars, and badge metadata', () => {
+      const summary = summarizeUserRewards([
+        { points: 25, stars: 0, badge_id: null, reason: 'Activity', reward_type: 'points' },
+        { points: 10, stars: 0, badge_id: null, reason: 'Activity', reward_type: 'points' },
+        { points: 0, stars: 1, badge_id: null, reason: 'Level 1', reward_type: 'star' },
+        { points: 0, stars: 0, badge_id: 'badge-1', reason: 'Badge earned', reward_type: 'badge' },
+      ], [
+        { id: 'badge-1', code: 'first-clear', name: 'First Clear', description: 'Completed level 1', icon: '🏆' },
+      ])
+
+      expect(summary.points).toBe(35)
+      expect(summary.stars).toBe(1)
+      expect(summary.badges).toHaveLength(1)
+      expect(summary.badges[0].code).toBe('first-clear')
+      expect(summary.badges[0].name).toBe('First Clear')
+    })
+
+    it('should handle partial reward rows without crashing', () => {
+      const summary = summarizeUserRewards([
+        { points: 15, stars: 0, badge_id: null, reason: 'Partial reward', reward_type: 'points' },
+      ], [])
+
+      expect(summary.points).toBe(15)
+      expect(summary.stars).toBe(0)
+      expect(summary.badges).toEqual([])
     })
   })
 })

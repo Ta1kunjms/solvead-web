@@ -1,9 +1,17 @@
 'use client'
 
+interface RewardBadge {
+  id?: string
+  code?: string
+  name?: string
+  description?: string | null
+  icon?: string | null
+}
+
 interface UserReward {
   points: number
   stars: number
-  badges: string[]
+  badges: RewardBadge[]
 }
 
 interface RewardsDisplayProps {
@@ -66,7 +74,6 @@ export default function RewardsDisplay({
 
   return (
     <div className="space-y-4">
-      {/* Points & Stars Summary */}
       <div className="bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-200 rounded-lg p-4">
         <div className="grid grid-cols-2 gap-4">
           <div className="text-center">
@@ -82,7 +89,6 @@ export default function RewardsDisplay({
         </div>
       </div>
 
-      {/* Badges */}
       {badges.length > 0 && (
         <div>
           <h4 className="font-semibold text-sm text-gray-700 mb-2">
@@ -90,14 +96,16 @@ export default function RewardsDisplay({
           </h4>
           <div className="space-y-2">
             {badges.map((badge) => {
-              const info = BADGES_INFO[badge] || {
-                icon: '🎖️',
-                name: badge,
-                description: 'Badge earned',
+              const badgeCode = badge.code ?? badge.name ?? 'custom-badge'
+              const info = BADGES_INFO[badgeCode] ?? {
+                icon: badge.icon ?? '🎖️',
+                name: badge.name ?? badgeCode,
+                description: badge.description ?? 'Badge earned',
               }
+
               return (
                 <div
-                  key={badge}
+                  key={badge.id ?? badgeCode}
                   className="flex items-start gap-3 bg-purple-50 border border-purple-200 rounded p-3"
                 >
                   <span className="text-2xl">{info.icon}</span>
@@ -116,7 +124,6 @@ export default function RewardsDisplay({
         </div>
       )}
 
-      {/* Empty State */}
       {stars === 0 && points === 0 && badges.length === 0 && (
         <div className="text-center py-6 text-gray-500">
           <p className="text-sm">Complete activities to earn rewards!</p>

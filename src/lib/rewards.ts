@@ -3,11 +3,36 @@
  * Award points and stars based on activity/level completion
  */
 
+export interface RewardBadge {
+  id?: string
+  code?: string
+  name?: string
+  description?: string | null
+  icon?: string | null
+}
+
 export interface RewardBatch {
   points: number
   stars: number
   badges: string[]
   reason: string
+}
+
+export interface UserRewardRecord {
+  id?: string
+  user_id?: string
+  level_id?: string | null
+  badge_id?: string | null
+  reward_type?: string | null
+  points?: number | null
+  stars?: number | null
+  reason?: string | null
+}
+
+export interface UserRewardSummary {
+  points: number
+  stars: number
+  badges: RewardBadge[]
 }
 
 const POINTS_PER_ACTIVITY = 10
@@ -44,6 +69,63 @@ export function calculateLevelCompletionReward(
     stars: STARS_PER_LEVEL,
     badges,
     reason: `Level ${levelNumber} completed${isFirstCompletion && levelNumber === 1 ? ' (first time)' : ''}: +${STARS_PER_LEVEL} star`,
+  }
+}
+
+/**
+ * Summarize flat user_rewards rows into the aggregate view the UI needs.
+ * The database stores rows individually; badges are joined through badge_id.
+ */
+export function summarizeUserRewards(
+  rewards: UserRewardRecord[] = [],
+  badgeRows: Array<RewardBadge & { id: string; code?: string; name?: string; description?: string | null; icon?: string | null }> = [],
+): UserRewardSummary {
+  let totalPoints = 0
+  let totalStars = 0
+  const badgeMap = new Map<string, RewardBadge>()
+  const seenBadgeIds = new Set<string>()
+
+  for (const badge of badgeRows ?? []) {
+    if (badge?.id) {
+      badgeMap.set(badge.id, {
+        id: badge.id,
+        code: badge.code,
+        name: badge.name,
+        description: badge.description ?? null,
+        icon: badge.icon ?? null,
+      })
+    }
+  }
+
+  const badgeList: RewardBadge[] = []
+
+  for (const reward of rewards ?? []) {
+    if (typeof reward?.points === 'number' && Number.isFinite(reward.points)) {
+      totalPoints += reward.points
+    }
+
+    if (typeof reward?.stars === 'number' && Number.isFinite(reward.stars)) {
+      totalStars += reward.stars
+    }
+
+    const badgeId = typeof reward?.badge_id === 'string' ? reward.badge_id : null
+    if (!badgeId || seenBadgeIds.has(badgeId)) {
+      continue
+    }
+
+    const matchedBadge = badgeMap.get(badgeId)
+    if (!matchedBadge) {
+      continue
+    }
+
+    seenBadgeIds.add(badgeId)
+    badgeList.push(matchedBadge)
+  }
+
+  return {
+    points: Math.max(0, totalPoints),
+    stars: Math.max(0, totalStars),
+    badges: badgeList,
   }
 }
 

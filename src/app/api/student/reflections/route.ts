@@ -90,17 +90,83 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: insertError.message }, { status: 500 })
     }
 
-    // Add to teacher notifications (for reflection queue)
+    // Notify the student's teacher(s) that a reflection needs review.
     try {
-      await supabase.from("teacher_notifications").insert({
-        teacher_id: user.id,
-        student_id: user.id,
-        notification_type: "reflection_submitted",
-        reference_id: response.id,
-      })
+      const { data: promptRow, error: promptLookupError } = await supabase
+        .from("reflection_prompts")
+        .select("id, prompt, level_id")
+        .eq("id", promptId)
+        .maybeSingle()
+
+      if (promptLookupError) {
+        console.error("Failed to look up reflection prompt for teacher notification", promptLookupError)
+      }
+
+      const { data: classRows, error: classLookupError } = await supabase
+        .from("class_students")
+        .select("classes!inner(teacher_id)")
+        .eq("student_id", user.id)
+        .eq("is_active", true)
+
+      if (classLookupError) {
+        console.error("Failed to look up teacher IDs for reflection notification", classLookupError)
+      }
+
+      const teacherIds = new Set<string>()
+      for (const row of classRows ?? []) {
+        const classInfo = (row as { classes?: { teacher_id?: string } | { teacher_id?: string }[] | null }).classes
+        const teacherId = Array.isArray(classInfo) ? classInfo[0]?.teacher_id : classInfo?.teacher_id
+        if (teacherId) {
+          teacherIds.add(teacherId)
+        }
+      }
+
+      if (teacherIds.size === 0) {
+        console.warn("No teacher found for reflection submission notification", { studentId: user.id, promptId })
+      } else {
+        const studentProfile = await supabase
+          .from("player_profiles")
+          .select("first_name, last_name")
+          .eq("user_id", user.id)
+          .maybeSingle()
+
+        const studentName = studentProfile.data
+          ? `${studentProfile.data.first_name ?? "Student"} ${studentProfile.data.last_name ?? ""}`.trim()
+          : "Student"
+
+        const promptText = typeof promptRow?.prompt === "string" ? promptRow.prompt : "a reflection"
+        const shortPrompt = promptText.length > 120 ? `${promptText.slice(0, 117)}...` : promptText
+        const levelSuffix = promptRow?.level_id ? " for this level" : ""
+        const message = `${studentName} submitted a reflection${levelSuffix}: ${shortPrompt}`
+
+        const notifications = Array.from(teacherIds).map((teacherId) => ({
+          teacher_id: teacherId,
+          student_id: user.id,
+          level_id: promptRow?.level_id ?? null,
+          type: "flagged_reflection",
+          message,
+          is_read: false,
+          created_at: new Date().toISOString(),
+        }))
+
+        const { error: notificationInsertError } = await supabase.from("teacher_notifications").insert(notifications)
+
+        if (notificationInsertError) {
+          console.error("Failed to create teacher reflection notification", {
+            error: notificationInsertError,
+            studentId: user.id,
+            teacherIds: Array.from(teacherIds),
+            promptId,
+            message,
+          })
+        }
+      }
     } catch (notifError) {
-      console.warn("Warning: Could not create teacher notification:", notifError)
-      // Don't fail the response - reflection was created successfully
+      console.error("Unexpected error while creating reflection notification", {
+        error: notifError,
+        studentId: user.id,
+        promptId,
+      })
     }
 
     return NextResponse.json(
